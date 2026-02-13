@@ -2,5 +2,13 @@
 name = "thrum"
 version = "0.0.1"
 edition = "2024"
+authors = ["whutchinson98"]
+description = "A terminal email client"
+license = "MIT"
+repository = "https://github.com/whutchinson98/thrum"
+homepage = "https://github.com/whutchinson98/thrum"
+readme = "README.md"
+keywords = ["email", "terminal", "tui", "mail", "client"]
+categories = ["command-line-utilities", "email"]
 
 [dependencies]
