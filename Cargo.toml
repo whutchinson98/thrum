@@ -11,4 +11,8 @@ readme = "README.md"
 keywords = ["email", "terminal", "tui", "mail", "client"]
 categories = ["command-line-utilities", "email"]
 
+[features]
+tracing = ["dep:tracing"]
+
 [dependencies]
+tracing = { version = "0.1.44", optional = true } 
