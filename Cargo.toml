@@ -15,4 +15,6 @@ categories = ["command-line-utilities", "email"]
 tracing = ["dep:tracing"]
 
 [dependencies]
-tracing = { version = "0.1.44", optional = true } 
+crossterm = "0.29"
+ratatui = "0.30"
+tracing = { version = "0.1.44", optional = true }
