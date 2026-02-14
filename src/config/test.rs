@@ -4,6 +4,8 @@ use super::*;
 fn parse_config() {
     let toml = r#"
 [imap]
+host = "imap.example.com"
+port = 993
 user = "me@example.com"
 pass = "hunter2"
 folder = "INBOX"
@@ -18,6 +20,8 @@ forcetls = "no"
 "#;
 
     let config: Config = toml::from_str(toml).unwrap();
+    assert_eq!(config.imap.host, "imap.example.com");
+    assert_eq!(config.imap.port, 993);
     assert_eq!(config.imap.user, "me@example.com");
     assert_eq!(config.imap.pass, "hunter2");
     assert_eq!(config.imap.folder, "INBOX");
@@ -66,6 +70,8 @@ fn load_from_file() {
         &path,
         r#"
 [imap]
+host = "imap.localhost"
+port = 993
 user = "u"
 pass = "`echo s3cret`"
 folder = "INBOX"

@@ -15,6 +15,8 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct ImapConfig {
+    pub host: String,
+    pub port: u16,
     pub user: String,
     pub pass: String,
     pub folder: String,

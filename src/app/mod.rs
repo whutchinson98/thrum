@@ -1,14 +1,30 @@
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::DefaultTerminal;
 
+use crate::imap::EmailSummary;
 use crate::ui;
 
 #[cfg(test)]
 mod test;
 
-#[derive(Default)]
 pub struct App {
     pub should_quit: bool,
+    pub emails: Vec<EmailSummary>,
+}
+
+impl App {
+    pub fn new(emails: Vec<EmailSummary>) -> Self {
+        Self {
+            should_quit: false,
+            emails,
+        }
+    }
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new(Vec::new())
+    }
 }
 
 impl App {

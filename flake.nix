@@ -23,6 +23,7 @@
           cargo-info
           cargo-udeps
           just
+          pkg-config
           (
             with fenix.packages.${system};
             combine [
@@ -36,12 +37,15 @@
           )
         ];
 
-        libraries = [
+        libraries = with pkgs; [
+          openssl
         ];
       in
       {
         devShell = pkgs.mkShell {
           buildInputs = packages ++ libraries;
+
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath libraries;
         };
       }
     );

@@ -18,8 +18,14 @@ tracing = ["dep:tracing"]
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
 dirs = "6"
+imap = "2.4"
+imap-proto = "0.10"
+native-tls = "0.2"
 ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 toml = "0.8"
 tracing = { version = "0.1.44", optional = true }
+
+[dev-dependencies]
+mockall = "0.13"
