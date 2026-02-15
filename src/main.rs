@@ -20,8 +20,7 @@ struct Cli {
 fn main() -> std::io::Result<()> {
     #[cfg(feature = "tracing")]
     {
-        let log_file = std::fs::File::create("thrum.log")
-            .expect("failed to create thrum.log");
+        let log_file = std::fs::File::create("thrum.log").expect("failed to create thrum.log");
         tracing_subscriber::fmt()
             .with_max_level(tracing::Level::TRACE)
             .with_writer(log_file)
