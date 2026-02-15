@@ -23,8 +23,10 @@ pub struct ImapConfig {
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct SmtpConfig {
-    pub url: String,
-    pub authentication: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub pass: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -97,10 +99,16 @@ pub fn load(path: Option<PathBuf>) -> Result<Config, ConfigError> {
     tracing::trace!("config parsed");
 
     #[cfg(feature = "tracing")]
-    tracing::trace!("expanding password");
+    tracing::trace!("expanding IMAP password");
     config.imap.pass = expand_command(&config.imap.pass)?;
     #[cfg(feature = "tracing")]
-    tracing::trace!("password expanded");
+    tracing::trace!("IMAP password expanded");
+
+    #[cfg(feature = "tracing")]
+    tracing::trace!("expanding SMTP password");
+    config.smtp.pass = expand_command(&config.smtp.pass)?;
+    #[cfg(feature = "tracing")]
+    tracing::trace!("SMTP password expanded");
 
     Ok(config)
 }

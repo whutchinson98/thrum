@@ -11,8 +11,10 @@ pass = "hunter2"
 folder = "INBOX"
 
 [smtp]
-url = "smtp://smtp.example.com:587"
-authentication = "plain"
+host = "smtp.example.com"
+port = 587
+user = "me@example.com"
+pass = "hunter2"
 "#;
 
     let config: Config = toml::from_str(toml).unwrap();
@@ -21,8 +23,10 @@ authentication = "plain"
     assert_eq!(config.imap.user, "me@example.com");
     assert_eq!(config.imap.pass, "hunter2");
     assert_eq!(config.imap.folder, "INBOX");
-    assert_eq!(config.smtp.url, "smtp://smtp.example.com:587");
-    assert_eq!(config.smtp.authentication, "plain");
+    assert_eq!(config.smtp.host, "smtp.example.com");
+    assert_eq!(config.smtp.port, 587);
+    assert_eq!(config.smtp.user, "me@example.com");
+    assert_eq!(config.smtp.pass, "hunter2");
 }
 
 #[test]
@@ -71,14 +75,17 @@ pass = "`echo s3cret`"
 folder = "INBOX"
 
 [smtp]
-url = "smtp://localhost"
-authentication = "login"
+host = "smtp.localhost"
+port = 587
+user = "u"
+pass = "`echo sm7p`"
 "#,
     )
     .unwrap();
 
     let config = load(Some(path)).unwrap();
     assert_eq!(config.imap.pass, "s3cret");
+    assert_eq!(config.smtp.pass, "sm7p");
 
     std::fs::remove_dir_all(&dir).ok();
 }

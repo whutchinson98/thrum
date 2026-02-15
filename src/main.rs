@@ -1,6 +1,8 @@
 mod app;
 mod config;
 mod imap;
+#[allow(dead_code)]
+mod smtp;
 mod ui;
 
 use std::path::PathBuf;
