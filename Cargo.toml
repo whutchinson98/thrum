@@ -24,6 +24,7 @@ native-tls = "0.2"
 ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
+chrono = "0.4"
 toml = "0.8"
 tracing = { version = "0.1.44", optional = true }
 tracing-subscriber = { version = "0.3", optional = true }

@@ -53,6 +53,8 @@ fn mock_client_returns_emails() {
             subject: "Hello".to_string(),
             from: "alice@example.com".to_string(),
             date: "2025-01-01".to_string(),
+            seen: false,
+            snippet: "Hey there".to_string(),
         }])
     });
 
@@ -68,4 +70,32 @@ fn mock_client_returns_empty() {
 
     let emails = mock.fetch_inbox().unwrap();
     assert!(emails.is_empty());
+}
+
+#[test]
+fn extract_snippet_plain_text() {
+    let input = b"Hello, this is a plain text email body.";
+    let result = extract_snippet(input);
+    assert_eq!(result, "Hello, this is a plain text email body.");
+}
+
+#[test]
+fn extract_snippet_truncates() {
+    let long = "word ".repeat(50);
+    let result = extract_snippet(long.as_bytes());
+    assert!(result.len() <= 110);
+    assert!(result.ends_with("..."));
+}
+
+#[test]
+fn extract_snippet_strips_html() {
+    let input = b"<p>Hello <b>world</b></p>";
+    let result = extract_snippet(input);
+    assert_eq!(result, "Hello world");
+}
+
+#[test]
+fn extract_snippet_empty() {
+    let result = extract_snippet(b"");
+    assert_eq!(result, "");
 }
