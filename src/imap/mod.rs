@@ -1,6 +1,6 @@
 use native_tls::TlsConnector;
 
-use crate::config::{ImapConfig, SslConfig};
+use crate::config::ImapConfig;
 
 #[cfg(test)]
 mod test;
@@ -34,9 +34,9 @@ pub struct NativeImapClient {
 impl NativeImapClient {
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = tracing::Level::TRACE, skip(config, ssl))
+        tracing::instrument(level = tracing::Level::TRACE, skip(config))
     )]
-    pub fn connect(config: &ImapConfig, ssl: &SslConfig) -> Result<Self, ImapError> {
+    pub fn connect(config: &ImapConfig) -> Result<Self, ImapError> {
         #[cfg(feature = "tracing")]
         tracing::trace!("building TLS connector");
         let tls = TlsConnector::builder().build()?;
@@ -46,14 +46,14 @@ impl NativeImapClient {
         let addr = (config.host.as_str(), config.port);
 
         #[cfg(feature = "tracing")]
-        tracing::trace!(host = config.host, port = config.port, starttls = %ssl.starttls, "connecting to IMAP server");
-        let client = if ssl.starttls == "yes" {
-            imap::connect_starttls(addr, &config.host, &tls)?
-        } else {
-            imap::connect(addr, &config.host, &tls)?
-        };
+        tracing::trace!(
+            host = config.host,
+            port = config.port,
+            "connecting to IMAP server"
+        );
+        let client = imap::connect(addr, &config.host, &tls)?;
         #[cfg(feature = "tracing")]
-        tracing::trace!("TCP/TLS connection established");
+        tracing::trace!("TLS connection established");
 
         #[cfg(feature = "tracing")]
         tracing::trace!(user = %config.user, "logging in");

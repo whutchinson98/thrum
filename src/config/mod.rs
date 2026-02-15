@@ -10,7 +10,6 @@ mod test;
 pub struct Config {
     pub imap: ImapConfig,
     pub smtp: SmtpConfig,
-    pub ssl: SslConfig,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -26,12 +25,6 @@ pub struct ImapConfig {
 pub struct SmtpConfig {
     pub url: String,
     pub authentication: String,
-}
-
-#[derive(Debug, Deserialize, PartialEq)]
-pub struct SslConfig {
-    pub starttls: String,
-    pub forcetls: String,
 }
 
 #[derive(Debug, thiserror::Error)]

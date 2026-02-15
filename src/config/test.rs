@@ -13,10 +13,6 @@ folder = "INBOX"
 [smtp]
 url = "smtp://smtp.example.com:587"
 authentication = "plain"
-
-[ssl]
-starttls = "yes"
-forcetls = "no"
 "#;
 
     let config: Config = toml::from_str(toml).unwrap();
@@ -27,8 +23,6 @@ forcetls = "no"
     assert_eq!(config.imap.folder, "INBOX");
     assert_eq!(config.smtp.url, "smtp://smtp.example.com:587");
     assert_eq!(config.smtp.authentication, "plain");
-    assert_eq!(config.ssl.starttls, "yes");
-    assert_eq!(config.ssl.forcetls, "no");
 }
 
 #[test]
@@ -79,10 +73,6 @@ folder = "INBOX"
 [smtp]
 url = "smtp://localhost"
 authentication = "login"
-
-[ssl]
-starttls = "yes"
-forcetls = "yes"
 "#,
     )
     .unwrap();
