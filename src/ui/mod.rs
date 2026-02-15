@@ -39,7 +39,7 @@ fn render_inbox<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App<I
 
 fn render_inbox_top_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
     let bar = Paragraph::new(
-        Line::from(" q=Quit  j/k=Navigate  r=Reply  m-a=Archive  m-r=Read  m-d=Delete  m-l=Labels")
+        Line::from(" q=Quit  j/k=Navigate  r=Reply  c=Compose  m-a=Archive  m-r=Read  m-d=Delete  m-l=Labels")
             .style(Style::new().bold()),
     );
     frame.render_widget(bar, area);
@@ -150,7 +150,7 @@ fn render_detail<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App<
 fn render_detail_top_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
     let bar = Paragraph::new(
         Line::from(
-            " Esc=Back  r=Reply  m-d=Delete  m-a=Archive  m-r=Read  m-l=Labels  j/k=Navigate",
+            " Esc=Back  r=Reply  c=Compose  m-d=Delete  m-a=Archive  m-r=Read  m-l=Labels  j/k=Navigate",
         )
         .style(Style::new().bold()),
     );
@@ -269,7 +269,12 @@ fn render_compose<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App
     frame.render_widget(bar, top);
 
     // Main compose area
-    let block = Block::bordered().title(format!(" Reply: {} ", state.subject));
+    let title = if state.is_reply {
+        format!(" Reply: {} ", state.subject)
+    } else {
+        " New Email ".to_string()
+    };
+    let block = Block::bordered().title(title);
     let inner = block.inner(main);
     frame.render_widget(block, main);
 
@@ -278,6 +283,24 @@ fn render_compose<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App
     // Header fields
     let label_style = Style::new().bold();
     let active_style = Style::new().fg(Color::Yellow);
+
+    // Subject field (editable for new emails, static for replies)
+    if !state.is_reply {
+        let subj_style = if state.step == ComposeStep::Subject {
+            active_style
+        } else {
+            Style::new()
+        };
+        lines.push(Line::from(vec![
+            Span::styled("  Sub: ", label_style),
+            Span::styled(&state.subject, subj_style),
+            if state.step == ComposeStep::Subject {
+                Span::styled("_", active_style)
+            } else {
+                Span::raw("")
+            },
+        ]));
+    }
 
     let to_style = if state.step == ComposeStep::To {
         active_style
@@ -381,6 +404,7 @@ fn render_compose<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App
                 " Step: {}",
                 match state.step {
                     ComposeStep::Body => "Body",
+                    ComposeStep::Subject => "Subject",
                     ComposeStep::To => "To",
                     ComposeStep::Cc => "CC",
                     ComposeStep::Bcc => "BCC",

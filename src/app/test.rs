@@ -478,3 +478,117 @@ fn compose_send_calls_smtp() {
     assert!(matches!(app.view, View::Inbox));
     assert_eq!(app.status_message.as_deref(), Some("Reply sent!"));
 }
+
+#[test]
+fn c_opens_new_email_from_inbox() {
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Char('c'), KeyModifiers::NONE);
+    if let View::Compose(ref state) = app.view {
+        assert!(!state.is_reply);
+        assert!(state.subject.is_empty());
+        assert!(state.to.is_empty());
+        assert!(state.in_reply_to.is_none());
+        assert!(state.references.is_empty());
+        assert!(state.quoted_text.is_empty());
+    } else {
+        panic!("expected compose view");
+    }
+}
+
+#[test]
+fn c_opens_new_email_from_detail() {
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(matches!(app.view, View::Detail(_)));
+    app.handle_key(KeyCode::Char('c'), KeyModifiers::NONE);
+    assert!(matches!(app.view, View::Compose(_)));
+    if let View::Compose(ref state) = app.view {
+        assert!(!state.is_reply);
+    }
+}
+
+#[test]
+fn new_email_step_flow_includes_subject() {
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Char('c'), KeyModifiers::NONE);
+
+    // Body -> Subject
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    if let View::Compose(ref state) = app.view {
+        assert_eq!(state.step, ComposeStep::Subject);
+    } else {
+        panic!("expected compose view");
+    }
+
+    // Subject empty — should stay on Subject with error
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    if let View::Compose(ref state) = app.view {
+        assert_eq!(state.step, ComposeStep::Subject);
+        assert!(state.status_message.is_some());
+    }
+
+    // Type a subject
+    app.handle_key(KeyCode::Char('H'), KeyModifiers::NONE);
+    app.handle_key(KeyCode::Char('i'), KeyModifiers::NONE);
+    if let View::Compose(ref state) = app.view {
+        assert_eq!(state.subject, "Hi");
+    }
+
+    // Subject -> To
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    if let View::Compose(ref state) = app.view {
+        assert_eq!(state.step, ComposeStep::To);
+    } else {
+        panic!("expected compose view");
+    }
+}
+
+#[test]
+fn reply_step_flow_skips_subject() {
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+
+    // Body -> To (skips Subject for replies)
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    if let View::Compose(ref state) = app.view {
+        assert_eq!(state.step, ComposeStep::To);
+    } else {
+        panic!("expected compose view");
+    }
+}
+
+#[test]
+fn new_email_send_calls_smtp() {
+    let (imap, mut smtp) = mock_clients();
+    smtp.expect_send().returning(|_| Ok(()));
+
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Char('c'), KeyModifiers::NONE);
+
+    // Body -> Subject
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    // Type subject
+    app.handle_key(KeyCode::Char('T'), KeyModifiers::NONE);
+    app.handle_key(KeyCode::Char('e'), KeyModifiers::NONE);
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::NONE);
+    app.handle_key(KeyCode::Char('t'), KeyModifiers::NONE);
+    // Subject -> To
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    // Type recipient
+    app.handle_key(KeyCode::Char('a'), KeyModifiers::NONE);
+    app.handle_key(KeyCode::Char('@'), KeyModifiers::NONE);
+    app.handle_key(KeyCode::Char('b'), KeyModifiers::NONE);
+    // To -> Cc
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    // Cc -> Bcc
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    // Bcc -> send
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+
+    assert!(matches!(app.view, View::Inbox));
+    assert_eq!(app.status_message.as_deref(), Some("Email sent!"));
+}

@@ -14,6 +14,7 @@ mod test;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ComposeStep {
     Body,
+    Subject,
     To,
     Cc,
     Bcc,
@@ -21,6 +22,7 @@ pub enum ComposeStep {
 
 pub struct ComposeState {
     pub step: ComposeStep,
+    pub is_reply: bool,
     pub body_lines: Vec<String>,
     pub cursor_row: usize,
     pub cursor_col: usize,
@@ -31,6 +33,7 @@ pub struct ComposeState {
     pub bcc: String,
     pub bcc_cursor: usize,
     pub subject: String,
+    pub subject_cursor: usize,
     pub in_reply_to: Option<String>,
     pub references: Vec<String>,
     pub quoted_text: String,
@@ -40,7 +43,7 @@ pub struct ComposeState {
 pub enum View {
     Inbox,
     Detail(DetailState),
-    Compose(ComposeState),
+    Compose(Box<ComposeState>),
 }
 
 pub struct DetailState {
@@ -184,6 +187,7 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
             KeyCode::Char('G') | KeyCode::End => self.select_last(),
             KeyCode::Enter => self.open_email(),
             KeyCode::Char('r') => self.start_reply(),
+            KeyCode::Char('c') => self.start_new_email(),
             KeyCode::Char('m') => {
                 #[cfg(feature = "tracing")]
                 tracing::trace!("prefix key pressed");
@@ -206,6 +210,7 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
                 self.should_quit = true;
             }
             KeyCode::Char('r') => self.start_reply(),
+            KeyCode::Char('c') => self.start_new_email(),
             KeyCode::Char('m') => {
                 #[cfg(feature = "tracing")]
                 tracing::trace!("prefix key pressed");
@@ -492,8 +497,9 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
         }
         let quoted_text = quoted_parts.join("\n\n");
 
-        self.view = View::Compose(ComposeState {
+        self.view = View::Compose(Box::new(ComposeState {
             step: ComposeStep::Body,
+            is_reply: true,
             body_lines: vec![String::new()],
             cursor_row: 0,
             cursor_col: 0,
@@ -504,11 +510,38 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
             bcc: String::new(),
             bcc_cursor: 0,
             subject,
+            subject_cursor: 0,
             in_reply_to,
             references,
             quoted_text,
             status_message: None,
-        });
+        }));
+    }
+
+    fn start_new_email(&mut self) {
+        if matches!(self.view, View::Compose(_)) {
+            return;
+        }
+
+        self.view = View::Compose(Box::new(ComposeState {
+            step: ComposeStep::Body,
+            is_reply: false,
+            body_lines: vec![String::new()],
+            cursor_row: 0,
+            cursor_col: 0,
+            to: String::new(),
+            to_cursor: 0,
+            cc: String::new(),
+            cc_cursor: 0,
+            bcc: String::new(),
+            bcc_cursor: 0,
+            subject: String::new(),
+            subject_cursor: 0,
+            in_reply_to: None,
+            references: vec![],
+            quoted_text: String::new(),
+            status_message: None,
+        }));
     }
 
     #[cfg_attr(
@@ -531,6 +564,9 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
                 };
                 match state.step {
                     ComposeStep::Body => handle_body_input(state, key),
+                    ComposeStep::Subject => {
+                        handle_line_input(&mut state.subject, &mut state.subject_cursor, key);
+                    }
                     ComposeStep::To => handle_line_input(&mut state.to, &mut state.to_cursor, key),
                     ComposeStep::Cc => handle_line_input(&mut state.cc, &mut state.cc_cursor, key),
                     ComposeStep::Bcc => {
@@ -552,6 +588,18 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
 
         match state.step {
             ComposeStep::Body => {
+                if state.is_reply {
+                    state.step = ComposeStep::To;
+                } else {
+                    state.step = ComposeStep::Subject;
+                }
+                state.status_message = None;
+            }
+            ComposeStep::Subject => {
+                if state.subject.trim().is_empty() {
+                    state.status_message = Some("Subject cannot be empty".to_string());
+                    return;
+                }
                 state.step = ComposeStep::To;
                 state.status_message = None;
             }
@@ -568,7 +616,7 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
                 state.status_message = None;
             }
             ComposeStep::Bcc => {
-                self.send_reply();
+                self.send_email();
             }
         }
     }
@@ -577,10 +625,12 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
         feature = "tracing",
         tracing::instrument(level = tracing::Level::TRACE, skip(self))
     )]
-    fn send_reply(&mut self) {
+    fn send_email(&mut self) {
         let View::Compose(ref state) = self.view else {
             return;
         };
+
+        let is_reply = state.is_reply;
 
         let mut body = state.body_lines.join("\n");
         if !state.quoted_text.is_empty() {
@@ -628,19 +678,24 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
             bcc = ?email.bcc,
             subject = %email.subject,
             in_reply_to = ?email.in_reply_to,
-            "sending reply"
+            "sending email"
         );
 
         match self.smtp_client.send(&email) {
             Ok(()) => {
                 #[cfg(feature = "tracing")]
-                tracing::trace!("reply sent successfully");
-                self.status_message = Some("Reply sent!".to_string());
+                tracing::trace!("email sent successfully");
+                let msg = if is_reply {
+                    "Reply sent!"
+                } else {
+                    "Email sent!"
+                };
+                self.status_message = Some(msg.to_string());
                 self.view = View::Inbox;
             }
             Err(e) => {
                 #[cfg(feature = "tracing")]
-                tracing::trace!(%e, "reply send failed");
+                tracing::trace!(%e, "email send failed");
                 if let View::Compose(ref mut state) = self.view {
                     state.status_message = Some(format!("Send failed: {e}"));
                 }
