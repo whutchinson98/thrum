@@ -55,6 +55,9 @@ fn mock_client_returns_emails() {
             date: "2025-01-01".to_string(),
             seen: false,
             snippet: "Hey there".to_string(),
+            message_id: None,
+            in_reply_to: None,
+            references: vec![],
         }])
     });
 
@@ -98,4 +101,33 @@ fn extract_snippet_strips_html() {
 fn extract_snippet_empty() {
     let result = extract_snippet(b"");
     assert_eq!(result, "");
+}
+
+#[test]
+fn parse_references_single() {
+    let input = b"References: <abc@example.com>\r\n";
+    let refs = parse_references(input);
+    assert_eq!(refs, vec!["abc@example.com"]);
+}
+
+#[test]
+fn parse_references_multiple() {
+    let input = b"References: <abc@example.com> <def@example.com> <ghi@example.com>\r\n";
+    let refs = parse_references(input);
+    assert_eq!(
+        refs,
+        vec!["abc@example.com", "def@example.com", "ghi@example.com"]
+    );
+}
+
+#[test]
+fn parse_references_empty() {
+    let refs = parse_references(b"");
+    assert!(refs.is_empty());
+}
+
+#[test]
+fn parse_references_no_angle_brackets() {
+    let refs = parse_references(b"References: no-brackets\r\n");
+    assert!(refs.is_empty());
 }

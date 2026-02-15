@@ -14,6 +14,19 @@ pub struct EmailSummary {
     pub date: String,
     pub seen: bool,
     pub snippet: String,
+    pub message_id: Option<String>,
+    pub in_reply_to: Option<String>,
+    pub references: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EmailBody {
+    pub uid: u32,
+    pub subject: String,
+    pub from: String,
+    pub to: Vec<String>,
+    pub date: String,
+    pub body_text: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -27,6 +40,10 @@ pub enum ImapError {
 #[cfg_attr(test, mockall::automock)]
 pub trait ImapClient {
     fn fetch_inbox(&mut self) -> Result<Vec<EmailSummary>, ImapError>;
+    fn fetch_email(&mut self, uid: u32) -> Result<EmailBody, ImapError>;
+    fn mark_seen(&mut self, uid: u32) -> Result<(), ImapError>;
+    fn delete_email(&mut self, uid: u32) -> Result<(), ImapError>;
+    fn archive_email(&mut self, uid: u32) -> Result<(), ImapError>;
 }
 
 pub struct NativeImapClient {
@@ -87,9 +104,10 @@ impl ImapClient for NativeImapClient {
 
         #[cfg(feature = "tracing")]
         tracing::trace!("fetching messages");
-        let messages = self
-            .session
-            .fetch("1:*", "(UID ENVELOPE FLAGS BODY.PEEK[TEXT]<0.200>)")?;
+        let messages = self.session.fetch(
+            "1:*",
+            "(UID ENVELOPE FLAGS BODY.PEEK[TEXT]<0.200> BODY.PEEK[HEADER.FIELDS (References)])",
+        )?;
         #[cfg(feature = "tracing")]
         tracing::trace!(raw_count = messages.len(), "messages fetched from server");
 
@@ -101,6 +119,8 @@ impl ImapClient for NativeImapClient {
             let seen = fetch.flags().iter().any(|f| matches!(f, Flag::Seen));
 
             let snippet = fetch.text().map(extract_snippet).unwrap_or_default();
+
+            let references = fetch.header().map(parse_references).unwrap_or_default();
 
             if let Some(envelope) = fetch.envelope() {
                 let subject = envelope
@@ -120,6 +140,14 @@ impl ImapClient for NativeImapClient {
                     .map(|d| String::from_utf8_lossy(d).into_owned())
                     .unwrap_or_default();
 
+                let message_id = envelope
+                    .message_id
+                    .map(|m| String::from_utf8_lossy(m).into_owned());
+
+                let in_reply_to = envelope
+                    .in_reply_to
+                    .map(|r| String::from_utf8_lossy(r).into_owned());
+
                 emails.push(EmailSummary {
                     uid,
                     subject,
@@ -127,6 +155,9 @@ impl ImapClient for NativeImapClient {
                     date,
                     seen,
                     snippet,
+                    message_id,
+                    in_reply_to,
+                    references,
                 });
             }
         }
@@ -134,13 +165,103 @@ impl ImapClient for NativeImapClient {
         #[cfg(feature = "tracing")]
         tracing::trace!(count = emails.len(), "emails parsed");
 
-        #[cfg(feature = "tracing")]
-        tracing::trace!("logging out");
-        self.session.logout()?;
-        #[cfg(feature = "tracing")]
-        tracing::trace!("logged out");
-
         Ok(emails)
+    }
+
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+    )]
+    fn fetch_email(&mut self, uid: u32) -> Result<EmailBody, ImapError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!(uid, "fetching email body");
+
+        let messages = self
+            .session
+            .uid_fetch(uid.to_string(), "(UID ENVELOPE BODY.PEEK[TEXT])")?;
+
+        let fetch = messages
+            .iter()
+            .next()
+            .ok_or_else(|| imap::Error::Bad("message not found".to_string()))?;
+
+        let body_text = fetch.text().map(extract_body_text).unwrap_or_default();
+
+        let (subject, from, to, date) = if let Some(envelope) = fetch.envelope() {
+            let subject = envelope
+                .subject
+                .map(|s| String::from_utf8_lossy(s).into_owned())
+                .unwrap_or_default();
+            let from = envelope
+                .from
+                .as_ref()
+                .and_then(|addrs| addrs.first())
+                .map(format_address)
+                .unwrap_or_default();
+            let to = envelope
+                .to
+                .as_ref()
+                .map(|addrs| addrs.iter().map(format_address).collect())
+                .unwrap_or_default();
+            let date = envelope
+                .date
+                .map(|d| String::from_utf8_lossy(d).into_owned())
+                .unwrap_or_default();
+            (subject, from, to, date)
+        } else {
+            (String::new(), String::new(), Vec::new(), String::new())
+        };
+
+        Ok(EmailBody {
+            uid,
+            subject,
+            from,
+            to,
+            date,
+            body_text,
+        })
+    }
+
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+    )]
+    fn mark_seen(&mut self, uid: u32) -> Result<(), ImapError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!(uid, "marking as seen");
+
+        self.session.uid_store(uid.to_string(), "+FLAGS (\\Seen)")?;
+        Ok(())
+    }
+
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+    )]
+    fn delete_email(&mut self, uid: u32) -> Result<(), ImapError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!(uid, "moving to Trash");
+
+        self.session.uid_mv(uid.to_string(), "Trash")?;
+        Ok(())
+    }
+
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+    )]
+    fn archive_email(&mut self, uid: u32) -> Result<(), ImapError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!(uid, "moving to Archive");
+
+        self.session.uid_mv(uid.to_string(), "Archive")?;
+        Ok(())
+    }
+}
+
+impl Drop for NativeImapClient {
+    fn drop(&mut self) {
+        let _ = self.session.logout();
     }
 }
 
@@ -165,6 +286,51 @@ fn format_address(addr: &imap_proto::Address) -> String {
         String::new()
     } else {
         format!("{mailbox}@{host}")
+    }
+}
+
+pub fn parse_references(raw: &[u8]) -> Vec<String> {
+    let text = String::from_utf8_lossy(raw);
+    let mut refs = Vec::new();
+    let mut start = None;
+
+    for (i, ch) in text.char_indices() {
+        match ch {
+            '<' => start = Some(i + 1),
+            '>' => {
+                if let Some(s) = start.take() {
+                    let msg_id = text[s..i].trim().to_string();
+                    if !msg_id.is_empty() {
+                        refs.push(msg_id);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    refs
+}
+
+pub fn extract_body_text(raw: &[u8]) -> String {
+    let text = String::from_utf8_lossy(raw);
+
+    let body = if let Some(plain) = extract_mime_plain_text(&text) {
+        plain.to_string()
+    } else if text.contains("Content-Type:") {
+        text.split_once("\r\n\r\n")
+            .or_else(|| text.split_once("\n\n"))
+            .map(|(_, body)| body.to_string())
+            .unwrap_or_else(|| text.into_owned())
+    } else {
+        text.into_owned()
+    };
+
+    // If it looks like HTML, strip tags
+    if body.contains('<') && body.contains('>') {
+        strip_html_tags(&body)
+    } else {
+        body
     }
 }
 

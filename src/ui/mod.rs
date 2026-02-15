@@ -3,9 +3,9 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Cell, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Cell, Paragraph, Row, Table, Wrap};
 
-use crate::app::App;
+use crate::app::{App, View};
 use crate::imap::ImapClient;
 use crate::smtp::SmtpClient;
 
@@ -17,6 +17,13 @@ mod test;
     tracing::instrument(level = tracing::Level::TRACE, skip(frame, app))
 )]
 pub fn render<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App<I, S>) {
+    match &app.view {
+        View::Inbox => render_inbox(frame, app),
+        View::Detail(_) => render_detail(frame, app),
+    }
+}
+
+fn render_inbox<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App<I, S>) {
     let [top, main, status] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -24,31 +31,39 @@ pub fn render<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App<I, 
     ])
     .areas(frame.area());
 
-    render_top_bar(frame, top);
-    render_main(frame, main, app);
-    render_status_bar(frame, status, app);
+    render_inbox_top_bar(frame, top);
+    render_inbox_main(frame, main, app);
+    render_inbox_status_bar(frame, status, app);
 }
 
-fn render_top_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
-    let bar = Paragraph::new(Line::from(" q=Quit  j/k=Navigate").style(Style::new().bold()));
+fn render_inbox_top_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
+    let bar = Paragraph::new(
+        Line::from(" q=Quit  j/k=Navigate  r=Reply  m-a=Archive  m-r=Read  m-d=Delete  m-l=Labels")
+            .style(Style::new().bold()),
+    );
     frame.render_widget(bar, area);
 }
 
-fn render_main<I: ImapClient, S: SmtpClient>(
+fn render_inbox_main<I: ImapClient, S: SmtpClient>(
     frame: &mut Frame,
     area: ratatui::layout::Rect,
     app: &mut App<I, S>,
 ) {
     let block = Block::bordered().title(" Inbox ");
 
-    if app.emails.is_empty() {
+    if app.threads.is_empty() {
         let content = Paragraph::new("No messages").block(block);
         frame.render_widget(content, area);
     } else {
         let rows: Vec<Row> = app
-            .emails
+            .threads
             .iter()
-            .map(|e| {
+            .filter_map(|thread| {
+                // Show the newest message (last in thread, oldest-first order)
+                let email_idx = *thread.last()?;
+                let e = app.emails.get(email_idx)?;
+                let thread_count = thread.len();
+
                 let row_style = if e.seen {
                     Style::new().fg(Color::Gray)
                 } else {
@@ -63,16 +78,23 @@ fn render_main<I: ImapClient, S: SmtpClient>(
 
                 let from_cell = Cell::from(e.from.as_str());
 
-                let subject_snippet = Line::from(vec![
-                    Span::raw(&e.subject),
-                    Span::raw(" "),
-                    Span::styled(&e.snippet, Style::new().fg(Color::DarkGray)),
-                ]);
-                let subject_cell = Cell::from(subject_snippet);
+                let mut subject_parts = vec![Span::raw(&e.subject)];
+                if thread_count > 1 {
+                    subject_parts.push(Span::styled(
+                        format!(" ({thread_count})"),
+                        Style::new().fg(Color::Cyan),
+                    ));
+                }
+                subject_parts.push(Span::raw(" "));
+                subject_parts.push(Span::styled(&e.snippet, Style::new().fg(Color::DarkGray)));
+                let subject_cell = Cell::from(Line::from(subject_parts));
 
                 let date_cell = Cell::from(format_date(&e.date));
 
-                Row::new(vec![unread_cell, from_cell, subject_cell, date_cell]).style(row_style)
+                Some(
+                    Row::new(vec![unread_cell, from_cell, subject_cell, date_cell])
+                        .style(row_style),
+                )
             })
             .collect();
 
@@ -91,17 +113,135 @@ fn render_main<I: ImapClient, S: SmtpClient>(
     }
 }
 
-fn render_status_bar<I: ImapClient, S: SmtpClient>(
+fn render_inbox_status_bar<I: ImapClient, S: SmtpClient>(
     frame: &mut Frame,
     area: ratatui::layout::Rect,
     app: &App<I, S>,
 ) {
-    let count = app.emails.len();
-    let text = if count == 0 {
-        String::new()
+    let text = if let Some(ref msg) = app.status_message {
+        format!(" {msg}")
     } else {
-        let selected = app.table_state.selected().map(|s| s + 1).unwrap_or(0);
-        format!(" {selected}/{count} messages")
+        let count = app.threads.len();
+        if count == 0 {
+            String::new()
+        } else {
+            let selected = app.table_state.selected().map(|s| s + 1).unwrap_or(0);
+            format!(" {selected}/{count} conversations")
+        }
+    };
+    let bar = Paragraph::new(text);
+    frame.render_widget(bar, area);
+}
+
+fn render_detail<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App<I, S>) {
+    let [top, main, status] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+    ])
+    .areas(frame.area());
+
+    render_detail_top_bar(frame, top);
+    render_detail_main(frame, main, app);
+    render_detail_status_bar(frame, status, app);
+}
+
+fn render_detail_top_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
+    let bar = Paragraph::new(
+        Line::from(
+            " Esc=Back  r=Reply  m-d=Delete  m-a=Archive  m-r=Read  m-l=Labels  j/k=Navigate",
+        )
+        .style(Style::new().bold()),
+    );
+    frame.render_widget(bar, area);
+}
+
+fn render_detail_main<I: ImapClient, S: SmtpClient>(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    app: &App<I, S>,
+) {
+    let View::Detail(ref state) = app.view else {
+        return;
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    for (i, msg) in state.thread.iter().enumerate() {
+        let email = &app.emails[msg.email_index];
+        let is_active = i == state.active_index;
+
+        if let Some(ref body) = msg.body {
+            // Expanded message
+            let header_style = if is_active {
+                Style::new().bg(Color::DarkGray).fg(Color::White)
+            } else {
+                Style::new()
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled("▼ From: ", header_style.bold()),
+                Span::styled(&body.from, header_style),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  To:   ", header_style),
+                Span::styled(body.to.join(", "), header_style),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Date: ", header_style),
+                Span::styled(format_date(&body.date), header_style),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Subj: ", header_style),
+                Span::styled(&body.subject, header_style),
+            ]));
+            lines.push(Line::from(""));
+
+            for text_line in body.body_text.lines() {
+                lines.push(Line::from(format!("  {text_line}")));
+            }
+
+            lines.push(Line::from(""));
+        } else {
+            // Collapsed message
+            let style = if is_active {
+                Style::new().bg(Color::DarkGray).fg(Color::White)
+            } else {
+                Style::new().fg(Color::Gray)
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled("▶ ", style),
+                Span::styled(&email.from, style.bold()),
+                Span::styled(" — ", style),
+                Span::styled(format_date(&email.date), style),
+                Span::styled(" — ", style),
+                Span::styled(&email.subject, style),
+            ]));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines)
+        .block(Block::bordered().title(" Email "))
+        .wrap(Wrap { trim: false })
+        .scroll((state.scroll_offset, 0));
+
+    frame.render_widget(paragraph, area);
+}
+
+fn render_detail_status_bar<I: ImapClient, S: SmtpClient>(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    app: &App<I, S>,
+) {
+    let text = if let View::Detail(ref state) = app.view {
+        state
+            .status_message
+            .as_deref()
+            .map(|s| format!(" {s}"))
+            .unwrap_or_default()
+    } else {
+        String::new()
     };
     let bar = Paragraph::new(text);
     frame.render_widget(bar, area);
