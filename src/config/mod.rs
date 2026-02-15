@@ -57,6 +57,8 @@ fn expand_command(value: &str) -> Result<String, ConfigError> {
     let trimmed = value.trim();
     if trimmed.starts_with('`') && trimmed.ends_with('`') && trimmed.len() >= 2 {
         let cmd = &trimmed[1..trimmed.len() - 1];
+        #[cfg(feature = "tracing")]
+        tracing::trace!(cmd, "executing password command");
         let output = Command::new("sh")
             .arg("-c")
             .arg(cmd)
@@ -71,8 +73,12 @@ fn expand_command(value: &str) -> Result<String, ConfigError> {
             )));
         }
 
+        #[cfg(feature = "tracing")]
+        tracing::trace!("password command succeeded");
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
+        #[cfg(feature = "tracing")]
+        tracing::trace!("using plain password value");
         Ok(value.to_string())
     }
 }
@@ -87,10 +93,21 @@ pub fn load(path: Option<PathBuf>) -> Result<Config, ConfigError> {
         None => default_config_path()?,
     };
 
+    #[cfg(feature = "tracing")]
+    tracing::trace!(path = %config_path.display(), "reading config file");
     let contents = std::fs::read_to_string(&config_path)?;
-    let mut config: Config = toml::from_str(&contents)?;
+    #[cfg(feature = "tracing")]
+    tracing::trace!(bytes = contents.len(), "config file read");
 
+    let mut config: Config = toml::from_str(&contents)?;
+    #[cfg(feature = "tracing")]
+    tracing::trace!("config parsed");
+
+    #[cfg(feature = "tracing")]
+    tracing::trace!("expanding password");
     config.imap.pass = expand_command(&config.imap.pass)?;
+    #[cfg(feature = "tracing")]
+    tracing::trace!("password expanded");
 
     Ok(config)
 }

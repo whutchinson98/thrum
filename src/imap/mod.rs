@@ -37,18 +37,31 @@ impl NativeImapClient {
         tracing::instrument(level = tracing::Level::TRACE, skip(config, ssl))
     )]
     pub fn connect(config: &ImapConfig, ssl: &SslConfig) -> Result<Self, ImapError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!("building TLS connector");
         let tls = TlsConnector::builder().build()?;
+        #[cfg(feature = "tracing")]
+        tracing::trace!("TLS connector built");
+
         let addr = (config.host.as_str(), config.port);
 
+        #[cfg(feature = "tracing")]
+        tracing::trace!(host = config.host, port = config.port, starttls = %ssl.starttls, "connecting to IMAP server");
         let client = if ssl.starttls == "yes" {
             imap::connect_starttls(addr, &config.host, &tls)?
         } else {
             imap::connect(addr, &config.host, &tls)?
         };
+        #[cfg(feature = "tracing")]
+        tracing::trace!("TCP/TLS connection established");
 
+        #[cfg(feature = "tracing")]
+        tracing::trace!(user = %config.user, "logging in");
         let session = client
             .login(&config.user, &config.pass)
             .map_err(|(e, _)| e)?;
+        #[cfg(feature = "tracing")]
+        tracing::trace!("login successful");
 
         Ok(Self {
             session,
@@ -63,9 +76,18 @@ impl ImapClient for NativeImapClient {
         tracing::instrument(level = tracing::Level::TRACE, skip(self))
     )]
     fn fetch_inbox(&mut self) -> Result<Vec<EmailSummary>, ImapError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!(folder = %self.folder, "selecting folder");
         self.session.select(&self.folder)?;
+        #[cfg(feature = "tracing")]
+        tracing::trace!("folder selected");
 
+        #[cfg(feature = "tracing")]
+        tracing::trace!("fetching messages");
         let messages = self.session.fetch("1:*", "(UID ENVELOPE)")?;
+        #[cfg(feature = "tracing")]
+        tracing::trace!(raw_count = messages.len(), "messages fetched from server");
+
         let mut emails = Vec::new();
 
         for fetch in messages.iter() {
@@ -97,7 +119,15 @@ impl ImapClient for NativeImapClient {
             }
         }
 
+        #[cfg(feature = "tracing")]
+        tracing::trace!(count = emails.len(), "emails parsed");
+
+        #[cfg(feature = "tracing")]
+        tracing::trace!("logging out");
         self.session.logout()?;
+        #[cfg(feature = "tracing")]
+        tracing::trace!("logged out");
+
         Ok(emails)
     }
 }

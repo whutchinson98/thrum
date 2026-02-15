@@ -18,19 +18,52 @@ struct Cli {
 }
 
 fn main() -> std::io::Result<()> {
+    #[cfg(feature = "tracing")]
+    {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .init();
+        tracing::trace!("tracing initialized");
+    }
+
     let cli = Cli::parse();
+    #[cfg(feature = "tracing")]
+    tracing::trace!("CLI args parsed");
 
+    #[cfg(feature = "tracing")]
+    tracing::trace!("loading config");
     let config = config::load(cli.config).map_err(|e| std::io::Error::other(e.to_string()))?;
+    #[cfg(feature = "tracing")]
+    tracing::trace!("config loaded");
 
+    #[cfg(feature = "tracing")]
+    tracing::trace!(host = %config.imap.host, port = config.imap.port, "connecting to IMAP server");
     let mut client = imap::NativeImapClient::connect(&config.imap, &config.ssl)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
+    #[cfg(feature = "tracing")]
+    tracing::trace!("IMAP connected");
 
+    #[cfg(feature = "tracing")]
+    tracing::trace!("fetching inbox");
     let emails = client
         .fetch_inbox()
         .map_err(|e| std::io::Error::other(e.to_string()))?;
+    #[cfg(feature = "tracing")]
+    tracing::trace!(count = emails.len(), "inbox fetched");
 
+    #[cfg(feature = "tracing")]
+    tracing::trace!("initializing terminal");
     let mut terminal = ratatui::init();
+    #[cfg(feature = "tracing")]
+    tracing::trace!("terminal initialized, starting app");
+
     let result = App::new(emails).run(&mut terminal);
+
+    #[cfg(feature = "tracing")]
+    tracing::trace!("app exited, restoring terminal");
     ratatui::restore();
+    #[cfg(feature = "tracing")]
+    tracing::trace!("terminal restored");
+
     result
 }
