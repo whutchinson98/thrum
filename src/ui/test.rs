@@ -1,13 +1,19 @@
 use super::*;
-use crate::imap::EmailSummary;
+use crate::imap::{EmailSummary, MockImapClient};
+use crate::smtp::MockSmtpClient;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
+
+fn mock_clients() -> (MockImapClient, MockSmtpClient) {
+    (MockImapClient::new(), MockSmtpClient::new())
+}
 
 #[test]
 fn render_does_not_panic() {
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let mut app = App::default();
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(Vec::new(), imap, smtp);
     terminal.draw(|frame| render(frame, &mut app)).unwrap();
 }
 
@@ -15,24 +21,29 @@ fn render_does_not_panic() {
 fn render_with_emails() {
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let mut app = App::new(vec![
-        EmailSummary {
-            uid: 1,
-            subject: "Hello".to_string(),
-            from: "alice@example.com".to_string(),
-            date: "2025-01-01".to_string(),
-            seen: false,
-            snippet: "Hey there".to_string(),
-        },
-        EmailSummary {
-            uid: 2,
-            subject: "Meeting".to_string(),
-            from: "Bob Jones".to_string(),
-            date: "2025-01-02".to_string(),
-            seen: true,
-            snippet: "Let's meet".to_string(),
-        },
-    ]);
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(
+        vec![
+            EmailSummary {
+                uid: 1,
+                subject: "Hello".to_string(),
+                from: "alice@example.com".to_string(),
+                date: "2025-01-01".to_string(),
+                seen: false,
+                snippet: "Hey there".to_string(),
+            },
+            EmailSummary {
+                uid: 2,
+                subject: "Meeting".to_string(),
+                from: "Bob Jones".to_string(),
+                date: "2025-01-02".to_string(),
+                seen: true,
+                snippet: "Let's meet".to_string(),
+            },
+        ],
+        imap,
+        smtp,
+    );
     terminal.draw(|frame| render(frame, &mut app)).unwrap();
 }
 

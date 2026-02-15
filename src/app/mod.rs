@@ -2,20 +2,25 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::DefaultTerminal;
 use ratatui::widgets::TableState;
 
-use crate::imap::EmailSummary;
+use crate::imap::{EmailSummary, ImapClient};
+use crate::smtp::SmtpClient;
 use crate::ui;
 
 #[cfg(test)]
 mod test;
 
-pub struct App {
+pub struct App<I: ImapClient, S: SmtpClient> {
     pub should_quit: bool,
     pub emails: Vec<EmailSummary>,
     pub table_state: TableState,
+    #[allow(dead_code)]
+    pub imap_client: I,
+    #[allow(dead_code)]
+    pub smtp_client: S,
 }
 
-impl App {
-    pub fn new(mut emails: Vec<EmailSummary>) -> Self {
+impl<I: ImapClient, S: SmtpClient> App<I, S> {
+    pub fn new(mut emails: Vec<EmailSummary>, imap_client: I, smtp_client: S) -> Self {
         emails.reverse();
         let mut table_state = TableState::default();
         if !emails.is_empty() {
@@ -25,17 +30,11 @@ impl App {
             should_quit: false,
             emails,
             table_state,
+            imap_client,
+            smtp_client,
         }
     }
-}
 
-impl Default for App {
-    fn default() -> Self {
-        Self::new(Vec::new())
-    }
-}
-
-impl App {
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(level = tracing::Level::TRACE, skip(self, terminal))

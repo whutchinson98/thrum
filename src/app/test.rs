@@ -1,5 +1,11 @@
 use super::*;
+use crate::imap::MockImapClient;
+use crate::smtp::MockSmtpClient;
 use crossterm::event::KeyCode;
+
+fn mock_clients() -> (MockImapClient, MockSmtpClient) {
+    (MockImapClient::new(), MockSmtpClient::new())
+}
 
 fn sample_emails() -> Vec<EmailSummary> {
     vec![
@@ -31,22 +37,25 @@ fn sample_emails() -> Vec<EmailSummary> {
 }
 
 #[test]
-fn default_state() {
-    let app = App::default();
+fn empty_app() {
+    let (imap, smtp) = mock_clients();
+    let app = App::new(Vec::new(), imap, smtp);
     assert!(!app.should_quit);
     assert!(app.table_state.selected().is_none());
 }
 
 #[test]
 fn q_quits() {
-    let mut app = App::default();
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(Vec::new(), imap, smtp);
     app.handle_key(KeyCode::Char('q'));
     assert!(app.should_quit);
 }
 
 #[test]
 fn other_keys_ignored() {
-    let mut app = App::default();
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(Vec::new(), imap, smtp);
     app.handle_key(KeyCode::Char('a'));
     assert!(!app.should_quit);
     app.handle_key(KeyCode::Enter);
@@ -55,7 +64,8 @@ fn other_keys_ignored() {
 
 #[test]
 fn j_moves_down() {
-    let mut app = App::new(sample_emails());
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp);
     assert_eq!(app.table_state.selected(), Some(0));
     app.handle_key(KeyCode::Char('j'));
     assert_eq!(app.table_state.selected(), Some(1));
@@ -65,7 +75,8 @@ fn j_moves_down() {
 
 #[test]
 fn k_moves_up() {
-    let mut app = App::new(sample_emails());
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp);
     app.handle_key(KeyCode::Char('j'));
     app.handle_key(KeyCode::Char('j'));
     assert_eq!(app.table_state.selected(), Some(2));
@@ -77,7 +88,8 @@ fn k_moves_up() {
 
 #[test]
 fn j_at_bottom_stays() {
-    let mut app = App::new(sample_emails());
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp);
     app.handle_key(KeyCode::Char('j'));
     app.handle_key(KeyCode::Char('j'));
     app.handle_key(KeyCode::Char('j'));
@@ -87,14 +99,16 @@ fn j_at_bottom_stays() {
 
 #[test]
 fn k_at_top_stays() {
-    let mut app = App::new(sample_emails());
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp);
     app.handle_key(KeyCode::Char('k'));
     assert_eq!(app.table_state.selected(), Some(0));
 }
 
 #[test]
 fn navigation_on_empty_list() {
-    let mut app = App::default();
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(Vec::new(), imap, smtp);
     app.handle_key(KeyCode::Char('j'));
     assert!(app.table_state.selected().is_none());
     app.handle_key(KeyCode::Char('k'));
@@ -107,7 +121,8 @@ fn navigation_on_empty_list() {
 
 #[test]
 fn emails_reversed_for_newest_first() {
-    let app = App::new(sample_emails());
+    let (imap, smtp) = mock_clients();
+    let app = App::new(sample_emails(), imap, smtp);
     assert_eq!(app.emails[0].uid, 3);
     assert_eq!(app.emails[1].uid, 2);
     assert_eq!(app.emails[2].uid, 1);
@@ -115,7 +130,8 @@ fn emails_reversed_for_newest_first() {
 
 #[test]
 fn g_selects_first() {
-    let mut app = App::new(sample_emails());
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp);
     app.handle_key(KeyCode::Char('j'));
     app.handle_key(KeyCode::Char('j'));
     assert_eq!(app.table_state.selected(), Some(2));
@@ -125,7 +141,8 @@ fn g_selects_first() {
 
 #[test]
 fn shift_g_selects_last() {
-    let mut app = App::new(sample_emails());
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp);
     assert_eq!(app.table_state.selected(), Some(0));
     app.handle_key(KeyCode::Char('G'));
     assert_eq!(app.table_state.selected(), Some(2));

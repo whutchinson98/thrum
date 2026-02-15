@@ -1,7 +1,6 @@
 mod app;
 mod config;
 mod imap;
-#[allow(dead_code)]
 mod smtp;
 mod ui;
 
@@ -48,6 +47,13 @@ fn main() -> std::io::Result<()> {
     tracing::trace!("IMAP connected");
 
     #[cfg(feature = "tracing")]
+    tracing::trace!(host = %config.smtp.host, port = config.smtp.port, "connecting to SMTP server");
+    let smtp_client = smtp::NativeSmtpClient::connect(&config.smtp)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    #[cfg(feature = "tracing")]
+    tracing::trace!("SMTP connected");
+
+    #[cfg(feature = "tracing")]
     tracing::trace!("fetching inbox");
     let emails = client
         .fetch_inbox()
@@ -61,7 +67,7 @@ fn main() -> std::io::Result<()> {
     #[cfg(feature = "tracing")]
     tracing::trace!("terminal initialized, starting app");
 
-    let result = App::new(emails).run(&mut terminal);
+    let result = App::new(emails, client, smtp_client).run(&mut terminal);
 
     #[cfg(feature = "tracing")]
     tracing::trace!("app exited, restoring terminal");

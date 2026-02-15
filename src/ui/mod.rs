@@ -6,6 +6,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, Paragraph, Row, Table};
 
 use crate::app::App;
+use crate::imap::ImapClient;
+use crate::smtp::SmtpClient;
 
 #[cfg(test)]
 mod test;
@@ -14,7 +16,7 @@ mod test;
     feature = "tracing",
     tracing::instrument(level = tracing::Level::TRACE, skip(frame, app))
 )]
-pub fn render(frame: &mut Frame, app: &mut App) {
+pub fn render<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App<I, S>) {
     let [top, main, status] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -32,7 +34,11 @@ fn render_top_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
     frame.render_widget(bar, area);
 }
 
-fn render_main(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
+fn render_main<I: ImapClient, S: SmtpClient>(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    app: &mut App<I, S>,
+) {
     let block = Block::bordered().title(" Inbox ");
 
     if app.emails.is_empty() {
@@ -85,7 +91,11 @@ fn render_main(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
     }
 }
 
-fn render_status_bar(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
+fn render_status_bar<I: ImapClient, S: SmtpClient>(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    app: &App<I, S>,
+) {
     let count = app.emails.len();
     let text = if count == 0 {
         String::new()

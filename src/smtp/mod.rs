@@ -7,6 +7,7 @@ use crate::config::SmtpConfig;
 #[cfg(test)]
 mod test;
 
+#[allow(dead_code)]
 pub struct Email {
     pub from: String,
     pub to: Vec<String>,
@@ -14,6 +15,7 @@ pub struct Email {
     pub body: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum SmtpError {
     #[error("SMTP error: {0}")]
@@ -24,12 +26,14 @@ pub enum SmtpError {
     Address(#[from] lettre::address::AddressError),
 }
 
+#[allow(dead_code)]
 #[cfg_attr(test, mockall::automock)]
 pub trait SmtpClient {
     fn send(&self, email: &Email) -> Result<(), SmtpError>;
 }
 
 pub struct NativeSmtpClient {
+    #[allow(dead_code)]
     transport: SmtpTransport,
 }
 
