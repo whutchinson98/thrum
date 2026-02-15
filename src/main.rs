@@ -67,7 +67,8 @@ fn main() -> std::io::Result<()> {
     #[cfg(feature = "tracing")]
     tracing::trace!("terminal initialized, starting app");
 
-    let result = App::new(emails, client, smtp_client).run(&mut terminal);
+    let sender_from = config.sender.formatted_from();
+    let result = App::new(emails, client, smtp_client, sender_from).run(&mut terminal);
 
     #[cfg(feature = "tracing")]
     tracing::trace!("app exited, restoring terminal");

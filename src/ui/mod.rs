@@ -5,7 +5,7 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, Paragraph, Row, Table, Wrap};
 
-use crate::app::{App, View};
+use crate::app::{App, ComposeStep, View};
 use crate::imap::ImapClient;
 use crate::smtp::SmtpClient;
 
@@ -20,6 +20,7 @@ pub fn render<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App<I, 
     match &app.view {
         View::Inbox => render_inbox(frame, app),
         View::Detail(_) => render_detail(frame, app),
+        View::Compose(_) => render_compose(frame, app),
     }
 }
 
@@ -245,6 +246,149 @@ fn render_detail_status_bar<I: ImapClient, S: SmtpClient>(
     };
     let bar = Paragraph::new(text);
     frame.render_widget(bar, area);
+}
+
+fn render_compose<I: ImapClient, S: SmtpClient>(frame: &mut Frame, app: &mut App<I, S>) {
+    let [top, main, status] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+    ])
+    .areas(frame.area());
+
+    let View::Compose(ref state) = app.view else {
+        return;
+    };
+
+    // Top bar with keybind hints
+    let hint = match state.step {
+        ComposeStep::Bcc => " Esc=Cancel  Alt+S=Send",
+        _ => " Esc=Cancel  Alt+S=Next",
+    };
+    let bar = Paragraph::new(Line::from(hint).style(Style::new().bold()));
+    frame.render_widget(bar, top);
+
+    // Main compose area
+    let block = Block::bordered().title(format!(" Reply: {} ", state.subject));
+    let inner = block.inner(main);
+    frame.render_widget(block, main);
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Header fields
+    let label_style = Style::new().bold();
+    let active_style = Style::new().fg(Color::Yellow);
+
+    let to_style = if state.step == ComposeStep::To {
+        active_style
+    } else {
+        Style::new()
+    };
+    lines.push(Line::from(vec![
+        Span::styled("  To:  ", label_style),
+        Span::styled(&state.to, to_style),
+        if state.step == ComposeStep::To {
+            Span::styled("_", active_style)
+        } else {
+            Span::raw("")
+        },
+    ]));
+
+    let cc_style = if state.step == ComposeStep::Cc {
+        active_style
+    } else {
+        Style::new()
+    };
+    lines.push(Line::from(vec![
+        Span::styled("  CC:  ", label_style),
+        Span::styled(&state.cc, cc_style),
+        if state.step == ComposeStep::Cc {
+            Span::styled("_", active_style)
+        } else {
+            Span::raw("")
+        },
+    ]));
+
+    let bcc_style = if state.step == ComposeStep::Bcc {
+        active_style
+    } else {
+        Style::new()
+    };
+    lines.push(Line::from(vec![
+        Span::styled("  BCC: ", label_style),
+        Span::styled(&state.bcc, bcc_style),
+        if state.step == ComposeStep::Bcc {
+            Span::styled("_", active_style)
+        } else {
+            Span::raw("")
+        },
+    ]));
+
+    // Separator
+    lines.push(Line::from("  ─────────────────────────────────────────"));
+
+    // Body text
+    for (i, line) in state.body_lines.iter().enumerate() {
+        if state.step == ComposeStep::Body && i == state.cursor_row {
+            // Show cursor in the body line
+            let (before, after) = if state.cursor_col <= line.len() {
+                (&line[..state.cursor_col], &line[state.cursor_col..])
+            } else {
+                (line.as_str(), "")
+            };
+            lines.push(Line::from(vec![
+                Span::raw(format!("  {before}")),
+                Span::styled(
+                    if after.is_empty() {
+                        " ".to_string()
+                    } else {
+                        after.chars().next().unwrap().to_string()
+                    },
+                    Style::new().bg(Color::White).fg(Color::Black),
+                ),
+                Span::raw(if after.len() > 1 {
+                    after[after.chars().next().unwrap().len_utf8()..].to_string()
+                } else {
+                    String::new()
+                }),
+            ]));
+        } else {
+            lines.push(Line::from(format!("  {line}")));
+        }
+    }
+
+    // Quoted text
+    if !state.quoted_text.is_empty() {
+        lines.push(Line::from(""));
+        for quoted_line in state.quoted_text.lines() {
+            lines.push(Line::from(Span::styled(
+                format!("  {quoted_line}"),
+                Style::new().fg(Color::DarkGray),
+            )));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, inner);
+
+    // Status bar
+    let status_text = state
+        .status_message
+        .as_deref()
+        .map(|s| format!(" {s}"))
+        .unwrap_or_else(|| {
+            format!(
+                " Step: {}",
+                match state.step {
+                    ComposeStep::Body => "Body",
+                    ComposeStep::To => "To",
+                    ComposeStep::Cc => "CC",
+                    ComposeStep::Bcc => "BCC",
+                }
+            )
+        });
+    let status_bar = Paragraph::new(status_text);
+    frame.render_widget(status_bar, status);
 }
 
 pub fn format_date(raw: &str) -> String {

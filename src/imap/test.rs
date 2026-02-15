@@ -8,7 +8,7 @@ fn format_address_with_name() {
         mailbox: Some(b"alice"),
         host: Some(b"example.com"),
     };
-    assert_eq!(format_address(&addr), "Alice Smith");
+    assert_eq!(format_address(&addr), "Alice Smith <alice@example.com>");
 }
 
 #[test]

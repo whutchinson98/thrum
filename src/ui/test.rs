@@ -27,7 +27,7 @@ fn render_does_not_panic() {
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(Vec::new(), imap, smtp);
+    let mut app = App::new(Vec::new(), imap, smtp, "me@example.com".to_string());
     terminal.draw(|frame| render(frame, &mut app)).unwrap();
 }
 
@@ -63,6 +63,7 @@ fn render_with_emails() {
         ],
         imap,
         smtp,
+        "me@example.com".to_string(),
     );
     terminal.draw(|frame| render(frame, &mut app)).unwrap();
 }
@@ -86,6 +87,7 @@ fn render_detail_view() {
         }],
         imap,
         smtp,
+        "me@example.com".to_string(),
     );
     // Open detail view
     app.handle_key(

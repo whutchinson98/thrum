@@ -15,6 +15,10 @@ host = "smtp.example.com"
 port = 587
 user = "me@example.com"
 pass = "hunter2"
+
+[sender]
+from = "me@example.com"
+name = "Me"
 "#;
 
     let config: Config = toml::from_str(toml).unwrap();
@@ -27,6 +31,9 @@ pass = "hunter2"
     assert_eq!(config.smtp.port, 587);
     assert_eq!(config.smtp.user, "me@example.com");
     assert_eq!(config.smtp.pass, "hunter2");
+    assert_eq!(config.sender.from, "me@example.com");
+    assert_eq!(config.sender.name.as_deref(), Some("Me"));
+    assert_eq!(config.sender.formatted_from(), "Me <me@example.com>");
 }
 
 #[test]
@@ -79,6 +86,9 @@ host = "smtp.localhost"
 port = 587
 user = "u"
 pass = "`echo sm7p`"
+
+[sender]
+from = "u@localhost"
 "#,
     )
     .unwrap();
@@ -86,6 +96,9 @@ pass = "`echo sm7p`"
     let config = load(Some(path)).unwrap();
     assert_eq!(config.imap.pass, "s3cret");
     assert_eq!(config.smtp.pass, "sm7p");
+    assert_eq!(config.sender.from, "u@localhost");
+    assert_eq!(config.sender.name, None);
+    assert_eq!(config.sender.formatted_from(), "u@localhost");
 
     std::fs::remove_dir_all(&dir).ok();
 }

@@ -7,15 +7,17 @@ use crate::config::SmtpConfig;
 #[cfg(test)]
 mod test;
 
-#[allow(dead_code)]
 pub struct Email {
     pub from: String,
     pub to: Vec<String>,
+    pub cc: Vec<String>,
+    pub bcc: Vec<String>,
     pub subject: String,
     pub body: String,
+    pub in_reply_to: Option<String>,
+    pub references: Vec<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum SmtpError {
     #[error("SMTP error: {0}")]
@@ -26,7 +28,6 @@ pub enum SmtpError {
     Address(#[from] lettre::address::AddressError),
 }
 
-#[allow(dead_code)]
 #[cfg_attr(test, mockall::automock)]
 pub trait SmtpClient {
     fn send(&self, email: &Email) -> Result<(), SmtpError>;
@@ -40,7 +41,7 @@ pub struct NativeSmtpClient {
 impl NativeSmtpClient {
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = tracing::Level::TRACE, skip(config))
+        tracing::instrument(level = tracing::Level::TRACE, skip(config), err)
     )]
     pub fn connect(config: &SmtpConfig) -> Result<Self, SmtpError> {
         #[cfg(feature = "tracing")]
@@ -67,7 +68,7 @@ impl NativeSmtpClient {
 impl SmtpClient for NativeSmtpClient {
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = tracing::Level::TRACE, skip(self, email))
+        tracing::instrument(level = tracing::Level::TRACE, skip(self, email), err)
     )]
     fn send(&self, email: &Email) -> Result<(), SmtpError> {
         #[cfg(feature = "tracing")]
@@ -80,6 +81,30 @@ impl SmtpClient for NativeSmtpClient {
         for to_addr in &email.to {
             let mailbox: Mailbox = to_addr.parse()?;
             builder = builder.to(mailbox);
+        }
+
+        for cc_addr in &email.cc {
+            let mailbox: Mailbox = cc_addr.parse()?;
+            builder = builder.cc(mailbox);
+        }
+
+        for bcc_addr in &email.bcc {
+            let mailbox: Mailbox = bcc_addr.parse()?;
+            builder = builder.bcc(mailbox);
+        }
+
+        if let Some(ref reply_to) = email.in_reply_to {
+            builder = builder.in_reply_to(reply_to.clone());
+        }
+
+        if !email.references.is_empty() {
+            let refs_str = email
+                .references
+                .iter()
+                .map(|r| format!("<{r}>"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            builder = builder.references(refs_str);
         }
 
         let message = builder.body(email.body.clone())?;

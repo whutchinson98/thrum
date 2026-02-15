@@ -54,7 +54,7 @@ pub struct NativeImapClient {
 impl NativeImapClient {
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = tracing::Level::TRACE, skip(config))
+        tracing::instrument(level = tracing::Level::TRACE, skip(config), err)
     )]
     pub fn connect(config: &ImapConfig) -> Result<Self, ImapError> {
         #[cfg(feature = "tracing")]
@@ -93,7 +93,7 @@ impl NativeImapClient {
 impl ImapClient for NativeImapClient {
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+        tracing::instrument(level = tracing::Level::TRACE, skip(self), err)
     )]
     fn fetch_inbox(&mut self) -> Result<Vec<EmailSummary>, ImapError> {
         #[cfg(feature = "tracing")]
@@ -170,7 +170,7 @@ impl ImapClient for NativeImapClient {
 
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+        tracing::instrument(level = tracing::Level::TRACE, skip(self), err)
     )]
     fn fetch_email(&mut self, uid: u32) -> Result<EmailBody, ImapError> {
         #[cfg(feature = "tracing")]
@@ -224,7 +224,7 @@ impl ImapClient for NativeImapClient {
 
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+        tracing::instrument(level = tracing::Level::TRACE, skip(self), err)
     )]
     fn mark_seen(&mut self, uid: u32) -> Result<(), ImapError> {
         #[cfg(feature = "tracing")]
@@ -236,7 +236,7 @@ impl ImapClient for NativeImapClient {
 
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+        tracing::instrument(level = tracing::Level::TRACE, skip(self), err)
     )]
     fn delete_email(&mut self, uid: u32) -> Result<(), ImapError> {
         #[cfg(feature = "tracing")]
@@ -248,7 +248,7 @@ impl ImapClient for NativeImapClient {
 
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+        tracing::instrument(level = tracing::Level::TRACE, skip(self), err)
     )]
     fn archive_email(&mut self, uid: u32) -> Result<(), ImapError> {
         #[cfg(feature = "tracing")]
@@ -266,13 +266,6 @@ impl Drop for NativeImapClient {
 }
 
 fn format_address(addr: &imap_proto::Address) -> String {
-    if let Some(name) = addr.name {
-        let name = String::from_utf8_lossy(name);
-        if !name.is_empty() {
-            return name.into_owned();
-        }
-    }
-
     let mailbox = addr
         .mailbox
         .map(|m| String::from_utf8_lossy(m).into_owned())
@@ -282,11 +275,20 @@ fn format_address(addr: &imap_proto::Address) -> String {
         .map(|h| String::from_utf8_lossy(h).into_owned())
         .unwrap_or_default();
 
-    if mailbox.is_empty() && host.is_empty() {
+    let email = if mailbox.is_empty() && host.is_empty() {
         String::new()
     } else {
         format!("{mailbox}@{host}")
+    };
+
+    if let Some(name) = addr.name {
+        let name = String::from_utf8_lossy(name);
+        if !name.is_empty() && !email.is_empty() {
+            return format!("{name} <{email}>");
+        }
     }
+
+    email
 }
 
 pub fn parse_references(raw: &[u8]) -> Vec<String> {

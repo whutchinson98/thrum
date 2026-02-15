@@ -5,15 +5,42 @@ use ratatui::DefaultTerminal;
 use ratatui::widgets::TableState;
 
 use crate::imap::{EmailBody, EmailSummary, ImapClient};
-use crate::smtp::SmtpClient;
+use crate::smtp::{self, SmtpClient};
 use crate::ui;
 
 #[cfg(test)]
 mod test;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ComposeStep {
+    Body,
+    To,
+    Cc,
+    Bcc,
+}
+
+pub struct ComposeState {
+    pub step: ComposeStep,
+    pub body_lines: Vec<String>,
+    pub cursor_row: usize,
+    pub cursor_col: usize,
+    pub to: String,
+    pub to_cursor: usize,
+    pub cc: String,
+    pub cc_cursor: usize,
+    pub bcc: String,
+    pub bcc_cursor: usize,
+    pub subject: String,
+    pub in_reply_to: Option<String>,
+    pub references: Vec<String>,
+    pub quoted_text: String,
+    pub status_message: Option<String>,
+}
+
 pub enum View {
     Inbox,
     Detail(DetailState),
+    Compose(ComposeState),
 }
 
 pub struct DetailState {
@@ -37,12 +64,17 @@ pub struct App<I: ImapClient, S: SmtpClient> {
     pub pending_prefix: bool,
     pub status_message: Option<String>,
     pub imap_client: I,
-    #[allow(dead_code)]
     pub smtp_client: S,
+    pub sender_from: String,
 }
 
 impl<I: ImapClient, S: SmtpClient> App<I, S> {
-    pub fn new(mut emails: Vec<EmailSummary>, imap_client: I, smtp_client: S) -> Self {
+    pub fn new(
+        mut emails: Vec<EmailSummary>,
+        imap_client: I,
+        smtp_client: S,
+        sender_from: String,
+    ) -> Self {
         emails.reverse();
         let threads = build_threads(&emails);
         let mut table_state = TableState::default();
@@ -59,12 +91,13 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
             status_message: None,
             imap_client,
             smtp_client,
+            sender_from,
         }
     }
 
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = tracing::Level::TRACE, skip(self, terminal))
+        tracing::instrument(level = tracing::Level::TRACE, skip(self, terminal), err)
     )]
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> std::io::Result<()> {
         #[cfg(feature = "tracing")]
@@ -84,7 +117,7 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
 
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+        tracing::instrument(level = tracing::Level::TRACE, skip(self), err)
     )]
     fn handle_event(&mut self) -> std::io::Result<()> {
         #[cfg(feature = "tracing")]
@@ -117,6 +150,7 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
         match &self.view {
             View::Inbox => self.handle_inbox_key(key),
             View::Detail(_) => self.handle_detail_key(key, modifiers),
+            View::Compose(_) => self.handle_compose_key(key, modifiers),
         }
     }
 
@@ -149,11 +183,7 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
             KeyCode::Char('g') | KeyCode::Home => self.select_first(),
             KeyCode::Char('G') | KeyCode::End => self.select_last(),
             KeyCode::Enter => self.open_email(),
-            KeyCode::Char('r') => {
-                #[cfg(feature = "tracing")]
-                tracing::trace!("reply stub from inbox");
-                self.status_message = Some("Reply not yet implemented".to_string());
-            }
+            KeyCode::Char('r') => self.start_reply(),
             KeyCode::Char('m') => {
                 #[cfg(feature = "tracing")]
                 tracing::trace!("prefix key pressed");
@@ -175,13 +205,7 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
                 tracing::trace!("quit requested from detail");
                 self.should_quit = true;
             }
-            KeyCode::Char('r') => {
-                #[cfg(feature = "tracing")]
-                tracing::trace!("reply stub");
-                if let View::Detail(ref mut state) = self.view {
-                    state.status_message = Some("Reply not yet implemented".to_string());
-                }
-            }
+            KeyCode::Char('r') => self.start_reply(),
             KeyCode::Char('m') => {
                 #[cfg(feature = "tracing")]
                 tracing::trace!("prefix key pressed");
@@ -283,6 +307,7 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
                 };
                 self.threads.get(selected).cloned().unwrap_or_default()
             }
+            View::Compose(_) => vec![],
         }
     }
 
@@ -401,6 +426,315 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
             self.table_state.select(Some(self.threads.len() - 1));
         }
     }
+
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+    )]
+    fn start_reply(&mut self) {
+        // Get the thread indices for the current selection
+        let thread_indices = match &self.view {
+            View::Inbox => {
+                let Some(selected) = self.table_state.selected() else {
+                    return;
+                };
+                self.threads.get(selected).cloned().unwrap_or_default()
+            }
+            View::Detail(state) => state.thread.iter().map(|m| m.email_index).collect(),
+            View::Compose(_) => return,
+        };
+
+        if thread_indices.is_empty() {
+            return;
+        }
+
+        // Most recent message is last in thread (oldest-first)
+        let reply_to_idx = *thread_indices.last().unwrap();
+        let reply_to = &self.emails[reply_to_idx];
+
+        // Build subject with Re: prefix (avoid double-prefixing)
+        let subject = if reply_to.subject.trim().to_lowercase().starts_with("re:") {
+            reply_to.subject.clone()
+        } else {
+            format!("Re: {}", reply_to.subject)
+        };
+
+        // Set in_reply_to from the reply-to email's message_id
+        let in_reply_to = reply_to.message_id.clone();
+
+        // Build references chain
+        let mut references = reply_to.references.clone();
+        if let Some(ref mid) = reply_to.message_id
+            && !references.contains(mid)
+        {
+            references.push(mid.clone());
+        }
+
+        // Extract email address from "Name <email>" or plain "email" format
+        let to = extract_email_address(&reply_to.from);
+
+        // Build quoted text by fetching bodies
+        let mut quoted_parts = Vec::new();
+        for &idx in &thread_indices {
+            let email = &self.emails[idx];
+            if let Ok(body) = self.imap_client.fetch_email(email.uid) {
+                quoted_parts.push(format!(
+                    "On {}, {} wrote:\n{}",
+                    email.date,
+                    email.from,
+                    body.body_text
+                        .lines()
+                        .map(|l| format!("> {l}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ));
+            }
+        }
+        let quoted_text = quoted_parts.join("\n\n");
+
+        self.view = View::Compose(ComposeState {
+            step: ComposeStep::Body,
+            body_lines: vec![String::new()],
+            cursor_row: 0,
+            cursor_col: 0,
+            to: to.clone(),
+            to_cursor: to.len(),
+            cc: String::new(),
+            cc_cursor: 0,
+            bcc: String::new(),
+            bcc_cursor: 0,
+            subject,
+            in_reply_to,
+            references,
+            quoted_text,
+            status_message: None,
+        });
+    }
+
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+    )]
+    fn handle_compose_key(&mut self, key: KeyCode, modifiers: KeyModifiers) {
+        match key {
+            KeyCode::Esc => {
+                #[cfg(feature = "tracing")]
+                tracing::trace!("compose cancelled");
+                self.view = View::Inbox;
+            }
+            KeyCode::Char('s') if modifiers.contains(KeyModifiers::ALT) => {
+                self.advance_compose_step();
+            }
+            _ => {
+                let View::Compose(ref mut state) = self.view else {
+                    return;
+                };
+                match state.step {
+                    ComposeStep::Body => handle_body_input(state, key),
+                    ComposeStep::To => handle_line_input(&mut state.to, &mut state.to_cursor, key),
+                    ComposeStep::Cc => handle_line_input(&mut state.cc, &mut state.cc_cursor, key),
+                    ComposeStep::Bcc => {
+                        handle_line_input(&mut state.bcc, &mut state.bcc_cursor, key);
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+    )]
+    fn advance_compose_step(&mut self) {
+        let View::Compose(ref mut state) = self.view else {
+            return;
+        };
+
+        match state.step {
+            ComposeStep::Body => {
+                state.step = ComposeStep::To;
+                state.status_message = None;
+            }
+            ComposeStep::To => {
+                if state.to.trim().is_empty() {
+                    state.status_message = Some("To field cannot be empty".to_string());
+                    return;
+                }
+                state.step = ComposeStep::Cc;
+                state.status_message = None;
+            }
+            ComposeStep::Cc => {
+                state.step = ComposeStep::Bcc;
+                state.status_message = None;
+            }
+            ComposeStep::Bcc => {
+                self.send_reply();
+            }
+        }
+    }
+
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = tracing::Level::TRACE, skip(self))
+    )]
+    fn send_reply(&mut self) {
+        let View::Compose(ref state) = self.view else {
+            return;
+        };
+
+        let mut body = state.body_lines.join("\n");
+        if !state.quoted_text.is_empty() {
+            body.push_str("\n\n");
+            body.push_str(&state.quoted_text);
+        }
+
+        let to: Vec<String> = state
+            .to
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        let cc: Vec<String> = state
+            .cc
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        let bcc: Vec<String> = state
+            .bcc
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        let email = smtp::Email {
+            from: self.sender_from.clone(),
+            to,
+            cc,
+            bcc,
+            subject: state.subject.clone(),
+            body,
+            in_reply_to: state.in_reply_to.clone(),
+            references: state.references.clone(),
+        };
+
+        #[cfg(feature = "tracing")]
+        tracing::trace!(
+            from = %email.from,
+            to = ?email.to,
+            cc = ?email.cc,
+            bcc = ?email.bcc,
+            subject = %email.subject,
+            in_reply_to = ?email.in_reply_to,
+            "sending reply"
+        );
+
+        match self.smtp_client.send(&email) {
+            Ok(()) => {
+                #[cfg(feature = "tracing")]
+                tracing::trace!("reply sent successfully");
+                self.status_message = Some("Reply sent!".to_string());
+                self.view = View::Inbox;
+            }
+            Err(e) => {
+                #[cfg(feature = "tracing")]
+                tracing::trace!(%e, "reply send failed");
+                if let View::Compose(ref mut state) = self.view {
+                    state.status_message = Some(format!("Send failed: {e}"));
+                }
+            }
+        }
+    }
+}
+
+fn handle_body_input(state: &mut ComposeState, key: KeyCode) {
+    match key {
+        KeyCode::Char(c) => {
+            state.body_lines[state.cursor_row].insert(state.cursor_col, c);
+            state.cursor_col += c.len_utf8();
+        }
+        KeyCode::Enter => {
+            let rest = state.body_lines[state.cursor_row].split_off(state.cursor_col);
+            state.cursor_row += 1;
+            state.body_lines.insert(state.cursor_row, rest);
+            state.cursor_col = 0;
+        }
+        KeyCode::Backspace => {
+            if state.cursor_col > 0 {
+                state.cursor_col -= 1;
+                state.body_lines[state.cursor_row].remove(state.cursor_col);
+            } else if state.cursor_row > 0 {
+                let line = state.body_lines.remove(state.cursor_row);
+                state.cursor_row -= 1;
+                state.cursor_col = state.body_lines[state.cursor_row].len();
+                state.body_lines[state.cursor_row].push_str(&line);
+            }
+        }
+        KeyCode::Left => {
+            if state.cursor_col > 0 {
+                state.cursor_col -= 1;
+            }
+        }
+        KeyCode::Right => {
+            if state.cursor_col < state.body_lines[state.cursor_row].len() {
+                state.cursor_col += 1;
+            }
+        }
+        KeyCode::Up => {
+            if state.cursor_row > 0 {
+                state.cursor_row -= 1;
+                state.cursor_col = state
+                    .cursor_col
+                    .min(state.body_lines[state.cursor_row].len());
+            }
+        }
+        KeyCode::Down => {
+            if state.cursor_row + 1 < state.body_lines.len() {
+                state.cursor_row += 1;
+                state.cursor_col = state
+                    .cursor_col
+                    .min(state.body_lines[state.cursor_row].len());
+            }
+        }
+        _ => {}
+    }
+}
+
+fn handle_line_input(field: &mut String, cursor: &mut usize, key: KeyCode) {
+    match key {
+        KeyCode::Char(c) => {
+            field.insert(*cursor, c);
+            *cursor += c.len_utf8();
+        }
+        KeyCode::Backspace => {
+            if *cursor > 0 {
+                *cursor -= 1;
+                field.remove(*cursor);
+            }
+        }
+        KeyCode::Left => {
+            if *cursor > 0 {
+                *cursor -= 1;
+            }
+        }
+        KeyCode::Right => {
+            if *cursor < field.len() {
+                *cursor += 1;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_email_address(from: &str) -> String {
+    if let Some(start) = from.find('<')
+        && let Some(end) = from.find('>')
+    {
+        return from[start + 1..end].to_string();
+    }
+    from.to_string()
 }
 
 /// Strip leading "Re:" / "RE:" / "re:" prefixes (possibly repeated) to get the base subject.

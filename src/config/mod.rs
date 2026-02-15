@@ -10,6 +10,7 @@ mod test;
 pub struct Config {
     pub imap: ImapConfig,
     pub smtp: SmtpConfig,
+    pub sender: SenderConfig,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -27,6 +28,21 @@ pub struct SmtpConfig {
     pub port: u16,
     pub user: String,
     pub pass: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct SenderConfig {
+    pub from: String,
+    pub name: Option<String>,
+}
+
+impl SenderConfig {
+    pub fn formatted_from(&self) -> String {
+        match &self.name {
+            Some(name) => format!("{name} <{}>", self.from),
+            None => self.from.clone(),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -80,7 +96,7 @@ fn expand_command(value: &str) -> Result<String, ConfigError> {
 
 #[cfg_attr(
     feature = "tracing",
-    tracing::instrument(level = tracing::Level::TRACE)
+    tracing::instrument(level = tracing::Level::TRACE, err)
 )]
 pub fn load(path: Option<PathBuf>) -> Result<Config, ConfigError> {
     let config_path = match path {

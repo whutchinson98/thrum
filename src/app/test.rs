@@ -3,6 +3,8 @@ use crate::imap::{EmailBody, MockImapClient};
 use crate::smtp::MockSmtpClient;
 use crossterm::event::{KeyCode, KeyModifiers};
 
+const SENDER: &str = "me@example.com";
+
 fn mock_clients() -> (MockImapClient, MockSmtpClient) {
     let mut imap = MockImapClient::new();
     // Set up default expectations for methods that may be called
@@ -63,7 +65,7 @@ fn sample_emails() -> Vec<EmailSummary> {
 #[test]
 fn empty_app() {
     let (imap, smtp) = mock_clients();
-    let app = App::new(Vec::new(), imap, smtp);
+    let app = App::new(Vec::new(), imap, smtp, SENDER.to_string());
     assert!(!app.should_quit);
     assert!(app.table_state.selected().is_none());
 }
@@ -71,7 +73,7 @@ fn empty_app() {
 #[test]
 fn q_quits() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(Vec::new(), imap, smtp);
+    let mut app = App::new(Vec::new(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Char('q'), KeyModifiers::NONE);
     assert!(app.should_quit);
 }
@@ -79,7 +81,7 @@ fn q_quits() {
 #[test]
 fn other_keys_ignored() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(Vec::new(), imap, smtp);
+    let mut app = App::new(Vec::new(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Char('a'), KeyModifiers::NONE);
     assert!(!app.should_quit);
     app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
@@ -89,7 +91,7 @@ fn other_keys_ignored() {
 #[test]
 fn j_moves_down() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     assert_eq!(app.table_state.selected(), Some(0));
     app.handle_key(KeyCode::Char('j'), KeyModifiers::NONE);
     assert_eq!(app.table_state.selected(), Some(1));
@@ -100,7 +102,7 @@ fn j_moves_down() {
 #[test]
 fn k_moves_up() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Char('j'), KeyModifiers::NONE);
     app.handle_key(KeyCode::Char('j'), KeyModifiers::NONE);
     assert_eq!(app.table_state.selected(), Some(2));
@@ -113,7 +115,7 @@ fn k_moves_up() {
 #[test]
 fn j_at_bottom_stays() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Char('j'), KeyModifiers::NONE);
     app.handle_key(KeyCode::Char('j'), KeyModifiers::NONE);
     app.handle_key(KeyCode::Char('j'), KeyModifiers::NONE);
@@ -124,7 +126,7 @@ fn j_at_bottom_stays() {
 #[test]
 fn k_at_top_stays() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Char('k'), KeyModifiers::NONE);
     assert_eq!(app.table_state.selected(), Some(0));
 }
@@ -132,7 +134,7 @@ fn k_at_top_stays() {
 #[test]
 fn navigation_on_empty_list() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(Vec::new(), imap, smtp);
+    let mut app = App::new(Vec::new(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Char('j'), KeyModifiers::NONE);
     assert!(app.table_state.selected().is_none());
     app.handle_key(KeyCode::Char('k'), KeyModifiers::NONE);
@@ -146,7 +148,7 @@ fn navigation_on_empty_list() {
 #[test]
 fn emails_reversed_for_newest_first() {
     let (imap, smtp) = mock_clients();
-    let app = App::new(sample_emails(), imap, smtp);
+    let app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     assert_eq!(app.emails[0].uid, 3);
     assert_eq!(app.emails[1].uid, 2);
     assert_eq!(app.emails[2].uid, 1);
@@ -155,7 +157,7 @@ fn emails_reversed_for_newest_first() {
 #[test]
 fn g_selects_first() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Char('j'), KeyModifiers::NONE);
     app.handle_key(KeyCode::Char('j'), KeyModifiers::NONE);
     assert_eq!(app.table_state.selected(), Some(2));
@@ -166,7 +168,7 @@ fn g_selects_first() {
 #[test]
 fn shift_g_selects_last() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     assert_eq!(app.table_state.selected(), Some(0));
     app.handle_key(KeyCode::Char('G'), KeyModifiers::NONE);
     assert_eq!(app.table_state.selected(), Some(2));
@@ -175,7 +177,7 @@ fn shift_g_selects_last() {
 #[test]
 fn enter_opens_detail_view() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
     assert!(matches!(app.view, View::Detail(_)));
 }
@@ -183,7 +185,7 @@ fn enter_opens_detail_view() {
 #[test]
 fn esc_returns_to_inbox() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
     assert!(matches!(app.view, View::Detail(_)));
     app.handle_key(KeyCode::Esc, KeyModifiers::NONE);
@@ -191,25 +193,18 @@ fn esc_returns_to_inbox() {
 }
 
 #[test]
-fn r_shows_reply_stub() {
+fn r_opens_compose_from_detail() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
     app.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
-    if let View::Detail(ref state) = app.view {
-        assert_eq!(
-            state.status_message.as_deref(),
-            Some("Reply not yet implemented")
-        );
-    } else {
-        panic!("expected detail view");
-    }
+    assert!(matches!(app.view, View::Compose(_)));
 }
 
 #[test]
 fn m_d_deletes_email_from_detail() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     let initial_count = app.emails.len();
     app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
     app.handle_key(KeyCode::Char('m'), KeyModifiers::NONE);
@@ -221,7 +216,7 @@ fn m_d_deletes_email_from_detail() {
 #[test]
 fn m_a_archives_email_from_detail() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     let initial_count = app.emails.len();
     app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
     app.handle_key(KeyCode::Char('m'), KeyModifiers::NONE);
@@ -233,7 +228,7 @@ fn m_a_archives_email_from_detail() {
 #[test]
 fn m_d_deletes_email_from_inbox() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     let initial_count = app.emails.len();
     app.handle_key(KeyCode::Char('m'), KeyModifiers::NONE);
     app.handle_key(KeyCode::Char('d'), KeyModifiers::NONE);
@@ -243,7 +238,7 @@ fn m_d_deletes_email_from_inbox() {
 #[test]
 fn m_a_archives_email_from_inbox() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     let initial_count = app.emails.len();
     app.handle_key(KeyCode::Char('m'), KeyModifiers::NONE);
     app.handle_key(KeyCode::Char('a'), KeyModifiers::NONE);
@@ -253,7 +248,7 @@ fn m_a_archives_email_from_inbox() {
 #[test]
 fn m_r_marks_read_from_inbox() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     // First email (index 0 after reverse) is uid=3, seen=false
     assert!(!app.emails[0].seen);
     app.handle_key(KeyCode::Char('m'), KeyModifiers::NONE);
@@ -262,20 +257,17 @@ fn m_r_marks_read_from_inbox() {
 }
 
 #[test]
-fn r_reply_stub_from_inbox() {
+fn r_opens_compose_from_inbox() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
-    assert_eq!(
-        app.status_message.as_deref(),
-        Some("Reply not yet implemented")
-    );
+    assert!(matches!(app.view, View::Compose(_)));
 }
 
 #[test]
 fn mark_seen_on_open() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     // First email (index 0 after reverse) is uid=3, seen=false
     assert!(!app.emails[0].seen);
     app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
@@ -286,7 +278,7 @@ fn mark_seen_on_open() {
 #[test]
 fn q_quits_from_detail() {
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(sample_emails(), imap, smtp);
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
     app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
     assert!(matches!(app.view, View::Detail(_)));
     app.handle_key(KeyCode::Char('q'), KeyModifiers::NONE);
@@ -320,7 +312,7 @@ fn thread_grouping_with_reply() {
             references: vec!["orig@example.com".to_string()],
         },
     ];
-    let app = App::new(emails, imap, smtp);
+    let app = App::new(emails, imap, smtp, SENDER.to_string());
     // Both emails should be in the same thread — only 1 thread in inbox
     assert_eq!(app.threads.len(), 1);
     assert_eq!(app.threads[0].len(), 2);
@@ -353,8 +345,136 @@ fn thread_grouping_by_subject() {
             references: vec![],
         },
     ];
-    let app = App::new(emails, imap, smtp);
+    let app = App::new(emails, imap, smtp, SENDER.to_string());
     // Should be grouped by subject matching — only 1 thread
     assert_eq!(app.threads.len(), 1);
     assert_eq!(app.threads[0].len(), 2);
+}
+
+#[test]
+fn compose_esc_cancels() {
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    assert!(matches!(app.view, View::Compose(_)));
+    app.handle_key(KeyCode::Esc, KeyModifiers::NONE);
+    assert!(matches!(app.view, View::Inbox));
+}
+
+#[test]
+fn compose_body_text_input() {
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    assert!(matches!(app.view, View::Compose(_)));
+    app.handle_key(KeyCode::Char('H'), KeyModifiers::NONE);
+    app.handle_key(KeyCode::Char('i'), KeyModifiers::NONE);
+    if let View::Compose(ref state) = app.view {
+        assert_eq!(state.body_lines[0], "Hi");
+    } else {
+        panic!("expected compose view");
+    }
+}
+
+#[test]
+fn compose_ctrl_s_advances_steps() {
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+
+    // Body -> To
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    if let View::Compose(ref state) = app.view {
+        assert_eq!(state.step, ComposeStep::To);
+    } else {
+        panic!("expected compose view");
+    }
+
+    // To -> Cc (To is pre-filled from reply)
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    if let View::Compose(ref state) = app.view {
+        assert_eq!(state.step, ComposeStep::Cc);
+    } else {
+        panic!("expected compose view");
+    }
+
+    // Cc -> Bcc
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    if let View::Compose(ref state) = app.view {
+        assert_eq!(state.step, ComposeStep::Bcc);
+    } else {
+        panic!("expected compose view");
+    }
+}
+
+#[test]
+fn compose_to_validation() {
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+
+    // Advance to To step
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    if let View::Compose(ref state) = app.view {
+        assert_eq!(state.step, ComposeStep::To);
+    }
+
+    // Clear the To field
+    if let View::Compose(ref mut state) = app.view {
+        state.to.clear();
+        state.to_cursor = 0;
+    }
+
+    // Try to advance — should stay on To step with error
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT);
+    if let View::Compose(ref state) = app.view {
+        assert_eq!(state.step, ComposeStep::To);
+        assert!(state.status_message.is_some());
+    } else {
+        panic!("expected compose view");
+    }
+}
+
+#[test]
+fn compose_subject_re_prefix() {
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    if let View::Compose(ref state) = app.view {
+        // sample_emails first thread has subject "Third" (after reverse, uid=3 is first)
+        assert!(state.subject.starts_with("Re: "));
+    } else {
+        panic!("expected compose view");
+    }
+}
+
+#[test]
+fn compose_in_reply_to_set() {
+    let (imap, smtp) = mock_clients();
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    if let View::Compose(ref state) = app.view {
+        // First thread after reverse is uid=3 with message_id "msg3@example.com"
+        assert_eq!(state.in_reply_to.as_deref(), Some("msg3@example.com"));
+    } else {
+        panic!("expected compose view");
+    }
+}
+
+#[test]
+fn compose_send_calls_smtp() {
+    let (imap, mut smtp) = mock_clients();
+    smtp.expect_send().returning(|_| Ok(()));
+
+    let mut app = App::new(sample_emails(), imap, smtp, SENDER.to_string());
+    app.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+
+    // Advance through all steps: Body -> To -> Cc -> Bcc -> send
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT); // -> To
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT); // -> Cc
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT); // -> Bcc
+    app.handle_key(KeyCode::Char('s'), KeyModifiers::ALT); // -> send
+
+    assert!(matches!(app.view, View::Inbox));
+    assert_eq!(app.status_message.as_deref(), Some("Reply sent!"));
 }
