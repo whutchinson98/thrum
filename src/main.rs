@@ -11,7 +11,7 @@ use clap::Parser;
 use imap::ImapClient;
 
 #[derive(Parser)]
-#[command(name = "thrum", about = "A terminal email client")]
+#[command(name = "thrum", version, about = "A terminal email client")]
 struct Cli {
     /// Path to config file (default: ~/.config/thrum.toml)
     #[arg(long)]
