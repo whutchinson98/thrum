@@ -483,8 +483,14 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
             references.push(mid.clone());
         }
 
-        // Extract email address from "Name <email>" or plain "email" format
-        let to = extract_email_address(&reply_to.from);
+        // If we sent the most recent message, reply to the original recipients
+        // instead of replying to ourselves
+        let to =
+            if extract_email_address(&reply_to.from) == extract_email_address(&self.sender_from) {
+                extract_email_address(&reply_to.to)
+            } else {
+                extract_email_address(&reply_to.from)
+            };
 
         // Build quoted text by fetching bodies
         let mut quoted_parts = Vec::new();

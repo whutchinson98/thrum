@@ -32,6 +32,7 @@ fn sample_emails() -> Vec<EmailSummary> {
             folder: "INBOX".to_string(),
             subject: "First".to_string(),
             from: "alice@example.com".to_string(),
+            to: SENDER.to_string(),
             date: "2025-01-01".to_string(),
             seen: true,
             snippet: "Hello".to_string(),
@@ -44,6 +45,7 @@ fn sample_emails() -> Vec<EmailSummary> {
             folder: "INBOX".to_string(),
             subject: "Second".to_string(),
             from: "bob@example.com".to_string(),
+            to: SENDER.to_string(),
             date: "2025-01-02".to_string(),
             seen: false,
             snippet: "World".to_string(),
@@ -56,6 +58,7 @@ fn sample_emails() -> Vec<EmailSummary> {
             folder: "INBOX".to_string(),
             subject: "Third".to_string(),
             from: "carol@example.com".to_string(),
+            to: SENDER.to_string(),
             date: "2025-01-03".to_string(),
             seen: false,
             snippet: "Test".to_string(),
@@ -298,6 +301,7 @@ fn thread_grouping_with_reply() {
             folder: "INBOX".to_string(),
             subject: "Original".to_string(),
             from: "alice@example.com".to_string(),
+            to: SENDER.to_string(),
             date: "2025-01-01".to_string(),
             seen: true,
             snippet: "Hello".to_string(),
@@ -310,6 +314,7 @@ fn thread_grouping_with_reply() {
             folder: "INBOX".to_string(),
             subject: "Re: Original".to_string(),
             from: "bob@example.com".to_string(),
+            to: "alice@example.com".to_string(),
             date: "2025-01-02".to_string(),
             seen: false,
             snippet: "Reply".to_string(),
@@ -333,6 +338,7 @@ fn thread_grouping_by_subject() {
             folder: "INBOX".to_string(),
             subject: "Hello World".to_string(),
             from: "alice@example.com".to_string(),
+            to: SENDER.to_string(),
             date: "2025-01-01".to_string(),
             seen: true,
             snippet: "Hi".to_string(),
@@ -345,6 +351,7 @@ fn thread_grouping_by_subject() {
             folder: "INBOX".to_string(),
             subject: "RE: Hello World".to_string(),
             from: "bob@example.com".to_string(),
+            to: "alice@example.com".to_string(),
             date: "2025-01-02".to_string(),
             seen: false,
             snippet: "Reply".to_string(),
@@ -599,4 +606,46 @@ fn new_email_send_calls_smtp() {
 
     assert!(matches!(app.view, View::Inbox));
     assert_eq!(app.status_message.as_deref(), Some("Email sent!"));
+}
+
+#[test]
+fn reply_to_own_sent_message_uses_recipient() {
+    let (imap, smtp) = mock_clients();
+    let emails = vec![
+        EmailSummary {
+            uid: 1,
+            folder: "INBOX".to_string(),
+            subject: "Hello".to_string(),
+            from: "alice@example.com".to_string(),
+            to: SENDER.to_string(),
+            date: "2025-01-01".to_string(),
+            seen: true,
+            snippet: "Hi".to_string(),
+            message_id: Some("orig@example.com".to_string()),
+            in_reply_to: None,
+            references: vec![],
+        },
+        // Most recent message was sent by us
+        EmailSummary {
+            uid: 2,
+            folder: "Sent".to_string(),
+            subject: "Re: Hello".to_string(),
+            from: SENDER.to_string(),
+            to: "alice@example.com".to_string(),
+            date: "2025-01-02".to_string(),
+            seen: true,
+            snippet: "Reply".to_string(),
+            message_id: Some("reply@example.com".to_string()),
+            in_reply_to: Some("orig@example.com".to_string()),
+            references: vec!["orig@example.com".to_string()],
+        },
+    ];
+    let mut app = App::new(emails, imap, smtp, SENDER.to_string(), None);
+    app.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    if let View::Compose(ref state) = app.view {
+        // Should reply to alice, not to ourselves
+        assert_eq!(state.to, "alice@example.com");
+    } else {
+        panic!("expected compose view");
+    }
 }

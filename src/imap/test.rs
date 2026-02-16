@@ -53,6 +53,7 @@ fn mock_client_returns_emails() {
             folder: "INBOX".to_string(),
             subject: "Hello".to_string(),
             from: "alice@example.com".to_string(),
+            to: "me@example.com".to_string(),
             date: "2025-01-01".to_string(),
             seen: false,
             snippet: "Hey there".to_string(),

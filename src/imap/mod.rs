@@ -12,6 +12,7 @@ pub struct EmailSummary {
     pub folder: String,
     pub subject: String,
     pub from: String,
+    pub to: String,
     pub date: String,
     pub seen: bool,
     pub snippet: String,
@@ -140,6 +141,13 @@ impl ImapClient for NativeImapClient {
                         .map(format_address)
                         .unwrap_or_default();
 
+                    let to = envelope
+                        .to
+                        .as_ref()
+                        .and_then(|addrs| addrs.first())
+                        .map(format_address)
+                        .unwrap_or_default();
+
                     let date = envelope
                         .date
                         .map(|d| String::from_utf8_lossy(d).into_owned())
@@ -165,6 +173,7 @@ impl ImapClient for NativeImapClient {
                         folder: folder.clone(),
                         subject,
                         from,
+                        to,
                         date,
                         seen,
                         snippet,
