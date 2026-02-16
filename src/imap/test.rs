@@ -133,3 +133,90 @@ fn parse_references_no_angle_brackets() {
     let refs = parse_references(b"References: no-brackets\r\n");
     assert!(refs.is_empty());
 }
+
+#[test]
+fn extract_body_text_prefers_plain_in_multipart() {
+    // Simulates BODY[TEXT] for a top-level multipart/alternative message
+    let input = b"--boundary123\r\n\
+        Content-Type: text/plain; charset=\"UTF-8\"\r\n\
+        \r\n\
+        Hello plain world\r\n\
+        --boundary123\r\n\
+        Content-Type: text/html; charset=\"UTF-8\"\r\n\
+        \r\n\
+        <html><body><p>Hello HTML world</p></body></html>\r\n\
+        --boundary123--";
+    let result = extract_body_text(input);
+    assert!(
+        result.contains("Hello plain world"),
+        "Should prefer plain text, got: {result}"
+    );
+    assert!(
+        !result.contains("HTML"),
+        "Should not contain HTML content, got: {result}"
+    );
+}
+
+#[test]
+fn extract_body_text_falls_back_to_html_when_no_plain() {
+    let input = b"--boundary456\r\n\
+        Content-Type: text/html; charset=\"UTF-8\"\r\n\
+        \r\n\
+        <html><body><p>Only HTML here</p></body></html>\r\n\
+        --boundary456--";
+    let result = extract_body_text(input);
+    assert!(
+        result.contains("Only HTML here"),
+        "Should strip HTML and return text, got: {result}"
+    );
+    assert!(
+        !result.contains("<html>"),
+        "Should have stripped HTML tags, got: {result}"
+    );
+}
+
+#[test]
+fn extract_body_text_plain_text_passthrough() {
+    let input = b"Just a simple plain text email.";
+    let result = extract_body_text(input);
+    assert_eq!(result, "Just a simple plain text email.");
+}
+
+#[test]
+fn extract_body_text_with_boundary_in_content_type_header() {
+    // When BODY[TEXT] includes a nested multipart with boundary= in a Content-Type header
+    let input = b"Content-Type: multipart/alternative; boundary=\"inner\"\r\n\
+        \r\n\
+        --inner\r\n\
+        Content-Type: text/plain\r\n\
+        \r\n\
+        Plain text body\r\n\
+        --inner\r\n\
+        Content-Type: text/html\r\n\
+        \r\n\
+        <b>HTML body</b>\r\n\
+        --inner--";
+    let result = extract_body_text(input);
+    assert!(
+        result.contains("Plain text body"),
+        "Should extract plain text, got: {result}"
+    );
+}
+
+#[test]
+fn extract_snippet_prefers_plain_in_multipart() {
+    let input = b"--snipbound\r\n\
+        Content-Type: text/plain\r\n\
+        \r\n\
+        Snippet plain text\r\n\
+        --snipbound\r\n\
+        Content-Type: text/html\r\n\
+        \r\n\
+        <p>Snippet HTML</p>\r\n\
+        --snipbound--";
+    let result = extract_snippet(input);
+    assert!(
+        result.contains("Snippet plain text"),
+        "Snippet should prefer plain text, got: {result}"
+    );
+}

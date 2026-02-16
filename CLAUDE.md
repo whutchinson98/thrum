@@ -93,6 +93,10 @@ fn my_function() {
 
 The TUI is built with [ratatui](https://ratatui.rs/). Use ratatui idioms and patterns for rendering, layout, and event handling.
 
+## Configuration
+
+When the config struct (`src/config/mod.rs`) is modified (fields added, removed, or renamed), update the example TOML snippets in `README.md` to match.
+
 ## Style Guidelines
 
 - Keep code simple and focused; avoid over-engineering.

@@ -360,9 +360,11 @@ pub fn parse_references(raw: &[u8]) -> Vec<String> {
 pub fn extract_body_text(raw: &[u8]) -> String {
     let text = String::from_utf8_lossy(raw);
 
-    let body = if let Some(plain) = extract_mime_plain_text(&text) {
-        plain.to_string()
-    } else if text.contains("Content-Type:") {
+    if let Some(mime_text) = extract_mime_text(&text) {
+        return mime_text;
+    }
+
+    let body = if text.contains("Content-Type:") {
         text.split_once("\r\n\r\n")
             .or_else(|| text.split_once("\n\n"))
             .map(|(_, body)| body.to_string())
@@ -382,8 +384,8 @@ pub fn extract_body_text(raw: &[u8]) -> String {
 pub fn extract_snippet(raw: &[u8]) -> String {
     let text = String::from_utf8_lossy(raw);
 
-    let body = if let Some(plain) = extract_mime_plain_text(&text) {
-        plain.to_string()
+    let body = if let Some(mime_text) = extract_mime_text(&text) {
+        mime_text
     } else if text.contains("Content-Type:") {
         // Single-part with MIME headers — skip to body after blank line
         text.split_once("\r\n\r\n")
@@ -401,8 +403,8 @@ pub fn extract_snippet(raw: &[u8]) -> String {
     truncate_at_word_boundary(&collapsed, 100)
 }
 
-fn extract_mime_plain_text(text: &str) -> Option<&str> {
-    // Look for a multipart boundary
+fn extract_mime_text(text: &str) -> Option<String> {
+    // Look for a multipart boundary from a Content-Type header in the text
     let boundary = text
         .lines()
         .find(|line| line.contains("boundary="))
@@ -411,26 +413,50 @@ fn extract_mime_plain_text(text: &str) -> Option<&str> {
             let rest = &line[start + 9..];
             let boundary = rest.trim_matches('"').trim_matches(';').trim();
             Some(boundary.to_string())
+        })
+        // For top-level multipart, BODY[TEXT] starts with --boundary
+        .or_else(|| {
+            let first_line = text.lines().next()?.trim_end();
+            if first_line.starts_with("--") && first_line.len() > 2 {
+                Some(first_line[2..].to_string())
+            } else {
+                None
+            }
         });
 
     let boundary = boundary?;
 
     let parts: Vec<&str> = text.split(&format!("--{boundary}")).collect();
 
+    let mut plain_text = None;
+    let mut html_text = None;
+
     for part in &parts {
         let lower = part.to_lowercase();
-        if lower.contains("content-type: text/plain") || lower.contains("content-type:text/plain") {
-            // Skip headers to get body
-            if let Some(body_start) = part.find("\r\n\r\n") {
-                return Some(&part[body_start + 4..]);
-            }
-            if let Some(body_start) = part.find("\n\n") {
-                return Some(&part[body_start + 2..]);
-            }
+        if (lower.contains("content-type: text/plain") || lower.contains("content-type:text/plain"))
+            && let Some(body) = extract_part_body(part)
+        {
+            plain_text = Some(body.to_string());
+        } else if (lower.contains("content-type: text/html")
+            || lower.contains("content-type:text/html"))
+            && let Some(body) = extract_part_body(part)
+        {
+            html_text = Some(strip_html_tags(body));
         }
     }
 
-    None
+    // Prefer plaintext, fall back to stripped HTML
+    plain_text.or(html_text)
+}
+
+fn extract_part_body(part: &str) -> Option<&str> {
+    if let Some(start) = part.find("\r\n\r\n") {
+        Some(&part[start + 4..])
+    } else if let Some(start) = part.find("\n\n") {
+        Some(&part[start + 2..])
+    } else {
+        None
+    }
 }
 
 fn strip_html_tags(input: &str) -> String {

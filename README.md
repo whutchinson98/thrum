@@ -12,13 +12,18 @@ host = "imap.example.com"
 port = 993
 user = "you@example.com"
 pass = "your-password"
-folder = "INBOX"
+folders = ["INBOX"]
+sent_folder = "Sent"       # optional
 
 [smtp]
 host = "smtp.example.com"
 port = 587
 user = "you@example.com"
 pass = "your-password"
+
+[sender]
+from = "you@example.com"
+name = "Your Name"         # optional
 ```
 
 ### Password commands
@@ -31,13 +36,18 @@ host = "imap.gmail.com"
 port = 993
 user = "you@gmail.com"
 pass = "`pass email/gmail`"
-folder = "INBOX"
+folders = ["INBOX"]
+sent_folder = "Sent"
 
 [smtp]
 host = "smtp.gmail.com"
 port = 587
 user = "you@gmail.com"
 pass = "`pass email/gmail`"
+
+[sender]
+from = "you@gmail.com"
+name = "Your Name"
 ```
 
 This works with any secret manager (`pass`, `op`, `gpg`, `security find-generic-password`, etc.).
