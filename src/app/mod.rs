@@ -69,6 +69,7 @@ pub struct App<I: ImapClient, S: SmtpClient> {
     pub imap_client: I,
     pub smtp_client: S,
     pub sender_from: String,
+    pub sent_folder: Option<String>,
 }
 
 impl<I: ImapClient, S: SmtpClient> App<I, S> {
@@ -77,6 +78,7 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
         imap_client: I,
         smtp_client: S,
         sender_from: String,
+        sent_folder: Option<String>,
     ) -> Self {
         emails.reverse();
         let threads = build_threads(&emails);
@@ -95,6 +97,7 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
             imap_client,
             smtp_client,
             sender_from,
+            sent_folder,
         }
     }
 
@@ -690,9 +693,17 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
         );
 
         match self.smtp_client.send(&email) {
-            Ok(()) => {
+            Ok(bytes) => {
                 #[cfg(feature = "tracing")]
                 tracing::trace!("email sent successfully");
+
+                if let Some(ref folder) = self.sent_folder
+                    && let Err(_e) = self.imap_client.append(folder, &bytes)
+                {
+                    #[cfg(feature = "tracing")]
+                    tracing::warn!(%_e, folder, "failed to append to sent folder");
+                }
+
                 let msg = if is_reply {
                     "Reply sent!"
                 } else {

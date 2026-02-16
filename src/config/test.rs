@@ -27,6 +27,7 @@ name = "Me"
     assert_eq!(config.imap.user, "me@example.com");
     assert_eq!(config.imap.pass, "hunter2");
     assert_eq!(config.imap.folders, vec!["INBOX".to_string()]);
+    assert_eq!(config.imap.sent_folder, None);
     assert_eq!(config.smtp.host, "smtp.example.com");
     assert_eq!(config.smtp.port, 587);
     assert_eq!(config.smtp.user, "me@example.com");
@@ -34,6 +35,31 @@ name = "Me"
     assert_eq!(config.sender.from, "me@example.com");
     assert_eq!(config.sender.name.as_deref(), Some("Me"));
     assert_eq!(config.sender.formatted_from(), "Me <me@example.com>");
+}
+
+#[test]
+fn parse_config_with_sent_folder() {
+    let toml = r#"
+[imap]
+host = "imap.example.com"
+port = 993
+user = "me@example.com"
+pass = "hunter2"
+folders = ["INBOX"]
+sent_folder = "Sent"
+
+[smtp]
+host = "smtp.example.com"
+port = 587
+user = "me@example.com"
+pass = "hunter2"
+
+[sender]
+from = "me@example.com"
+"#;
+
+    let config: Config = toml::from_str(toml).unwrap();
+    assert_eq!(config.imap.sent_folder.as_deref(), Some("Sent"));
 }
 
 #[test]

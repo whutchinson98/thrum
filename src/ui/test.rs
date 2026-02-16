@@ -19,6 +19,7 @@ fn mock_clients() -> (MockImapClient, MockSmtpClient) {
     imap.expect_mark_seen().returning(|_, _| Ok(()));
     imap.expect_delete_email().returning(|_, _| Ok(()));
     imap.expect_archive_email().returning(|_, _| Ok(()));
+    imap.expect_append().returning(|_, _| Ok(()));
     (imap, MockSmtpClient::new())
 }
 
@@ -27,7 +28,7 @@ fn render_does_not_panic() {
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
     let (imap, smtp) = mock_clients();
-    let mut app = App::new(Vec::new(), imap, smtp, "me@example.com".to_string());
+    let mut app = App::new(Vec::new(), imap, smtp, "me@example.com".to_string(), None);
     terminal.draw(|frame| render(frame, &mut app)).unwrap();
 }
 
@@ -66,6 +67,7 @@ fn render_with_emails() {
         imap,
         smtp,
         "me@example.com".to_string(),
+        None,
     );
     terminal.draw(|frame| render(frame, &mut app)).unwrap();
 }
@@ -91,6 +93,7 @@ fn render_detail_view() {
         imap,
         smtp,
         "me@example.com".to_string(),
+        None,
     );
     // Open detail view
     app.handle_key(

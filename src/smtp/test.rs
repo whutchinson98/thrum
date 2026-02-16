@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn mock_client_sends_email() {
     let mut mock = MockSmtpClient::new();
-    mock.expect_send().returning(|_| Ok(()));
+    mock.expect_send().returning(|_| Ok(vec![]));
 
     let email = Email {
         from: "sender@example.com".to_string(),

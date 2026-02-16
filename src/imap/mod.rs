@@ -45,6 +45,7 @@ pub trait ImapClient {
     fn mark_seen(&mut self, uid: u32, folder: &str) -> Result<(), ImapError>;
     fn delete_email(&mut self, uid: u32, folder: &str) -> Result<(), ImapError>;
     fn archive_email(&mut self, uid: u32, folder: &str) -> Result<(), ImapError>;
+    fn append(&mut self, folder: &str, content: &[u8]) -> Result<(), ImapError>;
 }
 
 pub struct NativeImapClient {
@@ -272,6 +273,22 @@ impl ImapClient for NativeImapClient {
 
         self.session.select(folder)?;
         self.session.uid_mv(uid.to_string(), "Archive")?;
+        Ok(())
+    }
+
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = tracing::Level::TRACE, skip(self, content), err)
+    )]
+    fn append(&mut self, folder: &str, content: &[u8]) -> Result<(), ImapError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!(folder, bytes = content.len(), "appending to folder");
+
+        self.session.append(folder, content)?;
+
+        #[cfg(feature = "tracing")]
+        tracing::trace!("append successful");
+
         Ok(())
     }
 }

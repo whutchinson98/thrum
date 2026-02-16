@@ -20,6 +20,7 @@ pub struct ImapConfig {
     pub user: String,
     pub pass: String,
     pub folders: Vec<String>,
+    pub sent_folder: Option<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

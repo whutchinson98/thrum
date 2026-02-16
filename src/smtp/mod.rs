@@ -30,7 +30,7 @@ pub enum SmtpError {
 
 #[cfg_attr(test, mockall::automock)]
 pub trait SmtpClient {
-    fn send(&self, email: &Email) -> Result<(), SmtpError>;
+    fn send(&self, email: &Email) -> Result<Vec<u8>, SmtpError>;
 }
 
 pub struct NativeSmtpClient {
@@ -70,7 +70,7 @@ impl SmtpClient for NativeSmtpClient {
         feature = "tracing",
         tracing::instrument(level = tracing::Level::TRACE, skip(self, email), err)
     )]
-    fn send(&self, email: &Email) -> Result<(), SmtpError> {
+    fn send(&self, email: &Email) -> Result<Vec<u8>, SmtpError> {
         #[cfg(feature = "tracing")]
         tracing::trace!(from = %email.from, to = ?email.to, subject = %email.subject, "building message");
 
@@ -108,6 +108,7 @@ impl SmtpClient for NativeSmtpClient {
         }
 
         let message = builder.body(email.body.clone())?;
+        let formatted = message.formatted();
         #[cfg(feature = "tracing")]
         tracing::trace!("message built");
 
@@ -119,6 +120,6 @@ impl SmtpClient for NativeSmtpClient {
         #[cfg(feature = "tracing")]
         tracing::trace!("email sent");
 
-        Ok(())
+        Ok(formatted)
     }
 }

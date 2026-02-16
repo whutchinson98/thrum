@@ -17,7 +17,7 @@
       overlays.default = final: prev: {
         thrum = final.rustPlatform.buildRustPackage {
           pname = "thrum";
-          version = "0.0.2";
+          version = "0.0.3";
           src = self;
           cargoLock.lockFile = ./Cargo.lock;
           nativeBuildInputs = [ final.pkg-config ];
