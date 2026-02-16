@@ -13,13 +13,31 @@
       flake-utils,
       fenix,
     }:
-    flake-utils.lib.eachDefaultSystem (
+    {
+      overlays.default = final: prev: {
+        thrum = final.rustPlatform.buildRustPackage {
+          pname = "thrum";
+          version = "0.0.2";
+          src = self;
+          cargoLock.lockFile = ./Cargo.lock;
+          nativeBuildInputs = [ final.pkg-config ];
+          buildInputs =
+            [ final.openssl ]
+            ++ final.lib.optionals final.stdenv.hostPlatform.isDarwin [
+              final.darwin.apple_sdk.frameworks.Security
+              final.darwin.apple_sdk.frameworks.SystemConfiguration
+            ];
+        };
+      };
+    }
+    // flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs {
           system = system;
+          overlays = [ self.overlays.default ];
         };
-        packages = with pkgs; [
+        devPackages = with pkgs; [
           cargo-info
           cargo-udeps
           just
@@ -42,8 +60,10 @@
         ];
       in
       {
+        packages.default = pkgs.thrum;
+
         devShell = pkgs.mkShell {
-          buildInputs = packages ++ libraries;
+          buildInputs = devPackages ++ libraries;
 
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath libraries;
         };
