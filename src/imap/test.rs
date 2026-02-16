@@ -220,3 +220,51 @@ fn extract_snippet_prefers_plain_in_multipart() {
         "Snippet should prefer plain text, got: {result}"
     );
 }
+
+#[test]
+fn extract_body_text_html_only_email() {
+    // Single-part HTML email with no plaintext alternative (like DigitalOcean notifications)
+    let input = b"<!DOCTYPE html>\n\
+        <html><head>\n\
+        <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n\
+        <style type=\"text/css\">\n\
+        .ReadMsgBody { width: 100%; }\n\
+        table td { border-collapse: collapse; }\n\
+        </style>\n\
+        </head><body>\n\
+        <p>Two-factor authentication is enabled</p>\n\
+        <p>You have increased your account security &amp; nice work!</p>\n\
+        <td>&nbsp;</td>\n\
+        </body></html>";
+    let result = extract_body_text(input);
+    assert!(
+        result.contains("Two-factor authentication is enabled"),
+        "Should extract text from HTML-only email, got: {result}"
+    );
+    assert!(
+        !result.contains("ReadMsgBody"),
+        "Should not contain CSS, got: {result}"
+    );
+    assert!(
+        !result.contains("&nbsp;"),
+        "Should decode HTML entities, got: {result}"
+    );
+    assert!(
+        result.contains("& nice"),
+        "Should decode &amp; entity, got: {result}"
+    );
+}
+
+#[test]
+fn strip_html_tags_removes_style_blocks() {
+    let input = "<style>body { color: red; }</style><p>Hello</p>";
+    let result = strip_html_tags(input);
+    assert_eq!(result.trim(), "Hello");
+}
+
+#[test]
+fn strip_html_tags_decodes_entities() {
+    let input = "foo&nbsp;bar &amp; baz &lt;ok&gt;";
+    let result = strip_html_tags(input);
+    assert_eq!(result, "foo bar & baz <ok>");
+}

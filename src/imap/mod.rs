@@ -364,6 +364,13 @@ pub fn extract_body_text(raw: &[u8]) -> String {
         return mime_text;
     }
 
+    let trimmed = text.trim_start();
+
+    // Raw HTML email (no MIME wrapper)
+    if trimmed.starts_with("<!") || trimmed.starts_with("<html") || trimmed.starts_with("<HTML") {
+        return strip_html_tags(&text);
+    }
+
     let body = if text.contains("Content-Type:") {
         text.split_once("\r\n\r\n")
             .or_else(|| text.split_once("\n\n"))
@@ -386,14 +393,20 @@ pub fn extract_snippet(raw: &[u8]) -> String {
 
     let body = if let Some(mime_text) = extract_mime_text(&text) {
         mime_text
-    } else if text.contains("Content-Type:") {
-        // Single-part with MIME headers — skip to body after blank line
-        text.split_once("\r\n\r\n")
-            .or_else(|| text.split_once("\n\n"))
-            .map(|(_, body)| body.to_string())
-            .unwrap_or_else(|| text.into_owned())
     } else {
-        text.into_owned()
+        let trimmed = text.trim_start();
+        if trimmed.starts_with("<!") || trimmed.starts_with("<html") || trimmed.starts_with("<HTML")
+        {
+            text.into_owned()
+        } else if text.contains("Content-Type:") {
+            // Single-part with MIME headers — skip to body after blank line
+            text.split_once("\r\n\r\n")
+                .or_else(|| text.split_once("\n\n"))
+                .map(|(_, body)| body.to_string())
+                .unwrap_or_else(|| text.into_owned())
+        } else {
+            text.into_owned()
+        }
     };
 
     let stripped = strip_html_tags(&body);
@@ -460,10 +473,30 @@ fn extract_part_body(part: &str) -> Option<&str> {
 }
 
 fn strip_html_tags(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut in_tag = false;
+    // First pass: remove <style>...</style> and <script>...</script> blocks
+    let mut text = input.to_string();
+    for tag in &["style", "script"] {
+        let open = format!("<{tag}");
+        let close = format!("</{tag}>");
+        loop {
+            let lower = text.to_lowercase();
+            let Some(start) = lower.find(&open) else {
+                break;
+            };
+            if let Some(end_offset) = lower[start..].find(&close) {
+                let end = start + end_offset + close.len();
+                text = format!("{}{}", &text[..start], &text[end..]);
+            } else {
+                text.truncate(start);
+                break;
+            }
+        }
+    }
 
-    for ch in input.chars() {
+    // Second pass: strip remaining HTML tags
+    let mut result = String::with_capacity(text.len());
+    let mut in_tag = false;
+    for ch in text.chars() {
         match ch {
             '<' => in_tag = true,
             '>' => in_tag = false,
@@ -471,6 +504,15 @@ fn strip_html_tags(input: &str) -> String {
             _ => {}
         }
     }
+
+    // Decode common HTML entities
+    result = result.replace("&nbsp;", " ");
+    result = result.replace("&amp;", "&");
+    result = result.replace("&lt;", "<");
+    result = result.replace("&gt;", ">");
+    result = result.replace("&quot;", "\"");
+    result = result.replace("&#39;", "'");
+    result = result.replace("&apos;", "'");
 
     result
 }
