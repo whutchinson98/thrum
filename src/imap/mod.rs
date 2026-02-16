@@ -9,6 +9,7 @@ mod test;
 #[derive(Debug, Clone, PartialEq)]
 pub struct EmailSummary {
     pub uid: u32,
+    pub folder: String,
     pub subject: String,
     pub from: String,
     pub date: String,
@@ -40,15 +41,15 @@ pub enum ImapError {
 #[cfg_attr(test, mockall::automock)]
 pub trait ImapClient {
     fn fetch_inbox(&mut self) -> Result<Vec<EmailSummary>, ImapError>;
-    fn fetch_email(&mut self, uid: u32) -> Result<EmailBody, ImapError>;
-    fn mark_seen(&mut self, uid: u32) -> Result<(), ImapError>;
-    fn delete_email(&mut self, uid: u32) -> Result<(), ImapError>;
-    fn archive_email(&mut self, uid: u32) -> Result<(), ImapError>;
+    fn fetch_email(&mut self, uid: u32, folder: &str) -> Result<EmailBody, ImapError>;
+    fn mark_seen(&mut self, uid: u32, folder: &str) -> Result<(), ImapError>;
+    fn delete_email(&mut self, uid: u32, folder: &str) -> Result<(), ImapError>;
+    fn archive_email(&mut self, uid: u32, folder: &str) -> Result<(), ImapError>;
 }
 
 pub struct NativeImapClient {
     session: imap::Session<native_tls::TlsStream<std::net::TcpStream>>,
-    folder: String,
+    folders: Vec<String>,
 }
 
 impl NativeImapClient {
@@ -85,7 +86,7 @@ impl NativeImapClient {
 
         Ok(Self {
             session,
-            folder: config.folder.clone(),
+            folders: config.folders.clone(),
         })
     }
 }
@@ -96,69 +97,81 @@ impl ImapClient for NativeImapClient {
         tracing::instrument(level = tracing::Level::TRACE, skip(self), err)
     )]
     fn fetch_inbox(&mut self) -> Result<Vec<EmailSummary>, ImapError> {
-        #[cfg(feature = "tracing")]
-        tracing::trace!(folder = %self.folder, "selecting folder");
-        self.session.select(&self.folder)?;
-        #[cfg(feature = "tracing")]
-        tracing::trace!("folder selected");
-
-        #[cfg(feature = "tracing")]
-        tracing::trace!("fetching messages");
-        let messages = self.session.fetch(
-            "1:*",
-            "(UID ENVELOPE FLAGS BODY.PEEK[TEXT]<0.200> BODY.PEEK[HEADER.FIELDS (References)])",
-        )?;
-        #[cfg(feature = "tracing")]
-        tracing::trace!(raw_count = messages.len(), "messages fetched from server");
-
         let mut emails = Vec::new();
+        let mut seen_message_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
 
-        for fetch in messages.iter() {
-            let uid = fetch.uid.unwrap_or(0);
+        for folder in &self.folders.clone() {
+            #[cfg(feature = "tracing")]
+            tracing::trace!(folder = %folder, "selecting folder");
+            self.session.select(folder)?;
+            #[cfg(feature = "tracing")]
+            tracing::trace!("folder selected");
 
-            let seen = fetch.flags().iter().any(|f| matches!(f, Flag::Seen));
+            #[cfg(feature = "tracing")]
+            tracing::trace!("fetching messages");
+            let messages = self.session.fetch(
+                "1:*",
+                "(UID ENVELOPE FLAGS BODY.PEEK[TEXT]<0.200> BODY.PEEK[HEADER.FIELDS (References)])",
+            )?;
+            #[cfg(feature = "tracing")]
+            tracing::trace!(raw_count = messages.len(), "messages fetched from server");
 
-            let snippet = fetch.text().map(extract_snippet).unwrap_or_default();
+            for fetch in messages.iter() {
+                let uid = fetch.uid.unwrap_or(0);
 
-            let references = fetch.header().map(parse_references).unwrap_or_default();
+                let seen = fetch.flags().iter().any(|f| matches!(f, Flag::Seen));
 
-            if let Some(envelope) = fetch.envelope() {
-                let subject = envelope
-                    .subject
-                    .map(|s| String::from_utf8_lossy(s).into_owned())
-                    .unwrap_or_default();
+                let snippet = fetch.text().map(extract_snippet).unwrap_or_default();
 
-                let from = envelope
-                    .from
-                    .as_ref()
-                    .and_then(|addrs| addrs.first())
-                    .map(format_address)
-                    .unwrap_or_default();
+                let references = fetch.header().map(parse_references).unwrap_or_default();
 
-                let date = envelope
-                    .date
-                    .map(|d| String::from_utf8_lossy(d).into_owned())
-                    .unwrap_or_default();
+                if let Some(envelope) = fetch.envelope() {
+                    let subject = envelope
+                        .subject
+                        .map(|s| String::from_utf8_lossy(s).into_owned())
+                        .unwrap_or_default();
 
-                let message_id = envelope
-                    .message_id
-                    .map(|m| String::from_utf8_lossy(m).into_owned());
+                    let from = envelope
+                        .from
+                        .as_ref()
+                        .and_then(|addrs| addrs.first())
+                        .map(format_address)
+                        .unwrap_or_default();
 
-                let in_reply_to = envelope
-                    .in_reply_to
-                    .map(|r| String::from_utf8_lossy(r).into_owned());
+                    let date = envelope
+                        .date
+                        .map(|d| String::from_utf8_lossy(d).into_owned())
+                        .unwrap_or_default();
 
-                emails.push(EmailSummary {
-                    uid,
-                    subject,
-                    from,
-                    date,
-                    seen,
-                    snippet,
-                    message_id,
-                    in_reply_to,
-                    references,
-                });
+                    let message_id = envelope
+                        .message_id
+                        .map(|m| String::from_utf8_lossy(m).into_owned());
+
+                    let in_reply_to = envelope
+                        .in_reply_to
+                        .map(|r| String::from_utf8_lossy(r).into_owned());
+
+                    // Deduplicate by message_id (keep first seen)
+                    if let Some(ref mid) = message_id
+                        && !seen_message_ids.insert(mid.clone())
+                    {
+                        continue;
+                    }
+
+                    emails.push(EmailSummary {
+                        uid,
+                        folder: folder.clone(),
+                        subject,
+                        from,
+                        date,
+                        seen,
+                        snippet,
+                        message_id,
+                        in_reply_to,
+                        references,
+                    });
+                }
             }
         }
 
@@ -172,10 +185,11 @@ impl ImapClient for NativeImapClient {
         feature = "tracing",
         tracing::instrument(level = tracing::Level::TRACE, skip(self), err)
     )]
-    fn fetch_email(&mut self, uid: u32) -> Result<EmailBody, ImapError> {
+    fn fetch_email(&mut self, uid: u32, folder: &str) -> Result<EmailBody, ImapError> {
         #[cfg(feature = "tracing")]
-        tracing::trace!(uid, "fetching email body");
+        tracing::trace!(uid, folder, "fetching email body");
 
+        self.session.select(folder)?;
         let messages = self
             .session
             .uid_fetch(uid.to_string(), "(UID ENVELOPE BODY.PEEK[TEXT])")?;
@@ -226,10 +240,11 @@ impl ImapClient for NativeImapClient {
         feature = "tracing",
         tracing::instrument(level = tracing::Level::TRACE, skip(self), err)
     )]
-    fn mark_seen(&mut self, uid: u32) -> Result<(), ImapError> {
+    fn mark_seen(&mut self, uid: u32, folder: &str) -> Result<(), ImapError> {
         #[cfg(feature = "tracing")]
-        tracing::trace!(uid, "marking as seen");
+        tracing::trace!(uid, folder, "marking as seen");
 
+        self.session.select(folder)?;
         self.session.uid_store(uid.to_string(), "+FLAGS (\\Seen)")?;
         Ok(())
     }
@@ -238,10 +253,11 @@ impl ImapClient for NativeImapClient {
         feature = "tracing",
         tracing::instrument(level = tracing::Level::TRACE, skip(self), err)
     )]
-    fn delete_email(&mut self, uid: u32) -> Result<(), ImapError> {
+    fn delete_email(&mut self, uid: u32, folder: &str) -> Result<(), ImapError> {
         #[cfg(feature = "tracing")]
-        tracing::trace!(uid, "moving to Trash");
+        tracing::trace!(uid, folder, "moving to Trash");
 
+        self.session.select(folder)?;
         self.session.uid_mv(uid.to_string(), "Trash")?;
         Ok(())
     }
@@ -250,10 +266,11 @@ impl ImapClient for NativeImapClient {
         feature = "tracing",
         tracing::instrument(level = tracing::Level::TRACE, skip(self), err)
     )]
-    fn archive_email(&mut self, uid: u32) -> Result<(), ImapError> {
+    fn archive_email(&mut self, uid: u32, folder: &str) -> Result<(), ImapError> {
         #[cfg(feature = "tracing")]
-        tracing::trace!(uid, "moving to Archive");
+        tracing::trace!(uid, folder, "moving to Archive");
 
+        self.session.select(folder)?;
         self.session.uid_mv(uid.to_string(), "Archive")?;
         Ok(())
     }

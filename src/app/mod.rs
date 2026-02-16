@@ -242,7 +242,8 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
                     } else {
                         let email_index = state.thread[idx].email_index;
                         let uid = self.emails[email_index].uid;
-                        if let Ok(body) = self.imap_client.fetch_email(uid) {
+                        let folder = self.emails[email_index].folder.clone();
+                        if let Ok(body) = self.imap_client.fetch_email(uid, &folder) {
                             state.thread[idx].body = Some(body);
                         }
                     }
@@ -269,13 +270,14 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
         let most_recent_idx = thread_indices.len() - 1;
         let most_recent_email_idx = thread_indices[most_recent_idx];
         let uid = self.emails[most_recent_email_idx].uid;
+        let folder = self.emails[most_recent_email_idx].folder.clone();
 
         // Mark as seen
-        let _ = self.imap_client.mark_seen(uid);
+        let _ = self.imap_client.mark_seen(uid, &folder);
         self.emails[most_recent_email_idx].seen = true;
 
         // Fetch full body for the most recent message
-        let body = self.imap_client.fetch_email(uid).ok();
+        let body = self.imap_client.fetch_email(uid, &folder).ok();
 
         let thread: Vec<ThreadMessage> = thread_indices
             .iter()
@@ -316,12 +318,12 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
         }
     }
 
-    /// Get all UIDs to act on. In inbox view, returns all UIDs in the thread.
-    /// In detail view, returns just the active message's UID.
-    fn selected_uids(&self) -> Vec<u32> {
+    /// Get all (uid, folder) pairs to act on. In inbox view, returns all in the thread.
+    /// In detail view, returns just the active message's pair.
+    fn selected_uid_folders(&self) -> Vec<(u32, String)> {
         self.selected_email_indices()
             .iter()
-            .filter_map(|&idx| self.emails.get(idx).map(|e| e.uid))
+            .filter_map(|&idx| self.emails.get(idx).map(|e| (e.uid, e.folder.clone())))
             .collect()
     }
 
@@ -330,16 +332,17 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
         tracing::instrument(level = tracing::Level::TRACE, skip(self))
     )]
     fn delete_selected_email(&mut self) {
-        let uids = self.selected_uids();
-        if uids.is_empty() {
+        let uid_folders = self.selected_uid_folders();
+        if uid_folders.is_empty() {
             return;
         }
 
         #[cfg(feature = "tracing")]
-        tracing::trace!(?uids, "deleting emails");
+        tracing::trace!(?uid_folders, "deleting emails");
 
-        for &uid in &uids {
-            let _ = self.imap_client.delete_email(uid);
+        let uids: Vec<u32> = uid_folders.iter().map(|(uid, _)| *uid).collect();
+        for (uid, folder) in &uid_folders {
+            let _ = self.imap_client.delete_email(*uid, folder);
         }
         self.emails.retain(|e| !uids.contains(&e.uid));
         self.threads = build_threads(&self.emails);
@@ -352,16 +355,17 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
         tracing::instrument(level = tracing::Level::TRACE, skip(self))
     )]
     fn archive_selected_email(&mut self) {
-        let uids = self.selected_uids();
-        if uids.is_empty() {
+        let uid_folders = self.selected_uid_folders();
+        if uid_folders.is_empty() {
             return;
         }
 
         #[cfg(feature = "tracing")]
-        tracing::trace!(?uids, "archiving emails");
+        tracing::trace!(?uid_folders, "archiving emails");
 
-        for &uid in &uids {
-            let _ = self.imap_client.archive_email(uid);
+        let uids: Vec<u32> = uid_folders.iter().map(|(uid, _)| *uid).collect();
+        for (uid, folder) in &uid_folders {
+            let _ = self.imap_client.archive_email(*uid, folder);
         }
         self.emails.retain(|e| !uids.contains(&e.uid));
         self.threads = build_threads(&self.emails);
@@ -374,16 +378,17 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
         tracing::instrument(level = tracing::Level::TRACE, skip(self))
     )]
     fn mark_selected_read(&mut self) {
-        let uids = self.selected_uids();
-        if uids.is_empty() {
+        let uid_folders = self.selected_uid_folders();
+        if uid_folders.is_empty() {
             return;
         }
 
         #[cfg(feature = "tracing")]
-        tracing::trace!(?uids, "marking as read");
+        tracing::trace!(?uid_folders, "marking as read");
 
-        for &uid in &uids {
-            let _ = self.imap_client.mark_seen(uid);
+        let uids: Vec<u32> = uid_folders.iter().map(|(uid, _)| *uid).collect();
+        for (uid, folder) in &uid_folders {
+            let _ = self.imap_client.mark_seen(*uid, folder);
         }
         for email in self.emails.iter_mut() {
             if uids.contains(&email.uid) {
@@ -481,12 +486,15 @@ impl<I: ImapClient, S: SmtpClient> App<I, S> {
         // Build quoted text by fetching bodies
         let mut quoted_parts = Vec::new();
         for &idx in &thread_indices {
-            let email = &self.emails[idx];
-            if let Ok(body) = self.imap_client.fetch_email(email.uid) {
+            let uid = self.emails[idx].uid;
+            let folder = self.emails[idx].folder.clone();
+            let date = self.emails[idx].date.clone();
+            let from = self.emails[idx].from.clone();
+            if let Ok(body) = self.imap_client.fetch_email(uid, &folder) {
                 quoted_parts.push(format!(
                     "On {}, {} wrote:\n{}",
-                    email.date,
-                    email.from,
+                    date,
+                    from,
                     body.body_text
                         .lines()
                         .map(|l| format!("> {l}"))

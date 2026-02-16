@@ -6,7 +6,7 @@ use ratatui::backend::TestBackend;
 
 fn mock_clients() -> (MockImapClient, MockSmtpClient) {
     let mut imap = MockImapClient::new();
-    imap.expect_fetch_email().returning(|uid| {
+    imap.expect_fetch_email().returning(|uid, _folder| {
         Ok(crate::imap::EmailBody {
             uid,
             subject: "Test".to_string(),
@@ -16,9 +16,9 @@ fn mock_clients() -> (MockImapClient, MockSmtpClient) {
             body_text: "Test body".to_string(),
         })
     });
-    imap.expect_mark_seen().returning(|_| Ok(()));
-    imap.expect_delete_email().returning(|_| Ok(()));
-    imap.expect_archive_email().returning(|_| Ok(()));
+    imap.expect_mark_seen().returning(|_, _| Ok(()));
+    imap.expect_delete_email().returning(|_, _| Ok(()));
+    imap.expect_archive_email().returning(|_, _| Ok(()));
     (imap, MockSmtpClient::new())
 }
 
@@ -40,6 +40,7 @@ fn render_with_emails() {
         vec![
             EmailSummary {
                 uid: 1,
+                folder: "INBOX".to_string(),
                 subject: "Hello".to_string(),
                 from: "alice@example.com".to_string(),
                 date: "2025-01-01".to_string(),
@@ -51,6 +52,7 @@ fn render_with_emails() {
             },
             EmailSummary {
                 uid: 2,
+                folder: "INBOX".to_string(),
                 subject: "Meeting".to_string(),
                 from: "Bob Jones".to_string(),
                 date: "2025-01-02".to_string(),
@@ -76,6 +78,7 @@ fn render_detail_view() {
     let mut app = App::new(
         vec![EmailSummary {
             uid: 1,
+            folder: "INBOX".to_string(),
             subject: "Hello".to_string(),
             from: "alice@example.com".to_string(),
             date: "Mon, 01 Jan 2025 10:00:00 +0000".to_string(),

@@ -50,6 +50,7 @@ fn mock_client_returns_emails() {
     mock.expect_fetch_inbox().returning(|| {
         Ok(vec![EmailSummary {
             uid: 1,
+            folder: "INBOX".to_string(),
             subject: "Hello".to_string(),
             from: "alice@example.com".to_string(),
             date: "2025-01-01".to_string(),

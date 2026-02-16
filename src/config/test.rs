@@ -8,7 +8,7 @@ host = "imap.example.com"
 port = 993
 user = "me@example.com"
 pass = "hunter2"
-folder = "INBOX"
+folders = ["INBOX"]
 
 [smtp]
 host = "smtp.example.com"
@@ -26,7 +26,7 @@ name = "Me"
     assert_eq!(config.imap.port, 993);
     assert_eq!(config.imap.user, "me@example.com");
     assert_eq!(config.imap.pass, "hunter2");
-    assert_eq!(config.imap.folder, "INBOX");
+    assert_eq!(config.imap.folders, vec!["INBOX".to_string()]);
     assert_eq!(config.smtp.host, "smtp.example.com");
     assert_eq!(config.smtp.port, 587);
     assert_eq!(config.smtp.user, "me@example.com");
@@ -79,7 +79,7 @@ host = "imap.localhost"
 port = 993
 user = "u"
 pass = "`echo s3cret`"
-folder = "INBOX"
+folders = ["INBOX"]
 
 [smtp]
 host = "smtp.localhost"

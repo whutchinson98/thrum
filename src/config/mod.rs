@@ -19,7 +19,7 @@ pub struct ImapConfig {
     pub port: u16,
     pub user: String,
     pub pass: String,
-    pub folder: String,
+    pub folders: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

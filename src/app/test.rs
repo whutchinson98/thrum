@@ -8,7 +8,7 @@ const SENDER: &str = "me@example.com";
 fn mock_clients() -> (MockImapClient, MockSmtpClient) {
     let mut imap = MockImapClient::new();
     // Set up default expectations for methods that may be called
-    imap.expect_fetch_email().returning(|uid| {
+    imap.expect_fetch_email().returning(|uid, _folder| {
         Ok(EmailBody {
             uid,
             subject: "Test".to_string(),
@@ -18,9 +18,9 @@ fn mock_clients() -> (MockImapClient, MockSmtpClient) {
             body_text: "Test body".to_string(),
         })
     });
-    imap.expect_mark_seen().returning(|_| Ok(()));
-    imap.expect_delete_email().returning(|_| Ok(()));
-    imap.expect_archive_email().returning(|_| Ok(()));
+    imap.expect_mark_seen().returning(|_, _| Ok(()));
+    imap.expect_delete_email().returning(|_, _| Ok(()));
+    imap.expect_archive_email().returning(|_, _| Ok(()));
     (imap, MockSmtpClient::new())
 }
 
@@ -28,6 +28,7 @@ fn sample_emails() -> Vec<EmailSummary> {
     vec![
         EmailSummary {
             uid: 1,
+            folder: "INBOX".to_string(),
             subject: "First".to_string(),
             from: "alice@example.com".to_string(),
             date: "2025-01-01".to_string(),
@@ -39,6 +40,7 @@ fn sample_emails() -> Vec<EmailSummary> {
         },
         EmailSummary {
             uid: 2,
+            folder: "INBOX".to_string(),
             subject: "Second".to_string(),
             from: "bob@example.com".to_string(),
             date: "2025-01-02".to_string(),
@@ -50,6 +52,7 @@ fn sample_emails() -> Vec<EmailSummary> {
         },
         EmailSummary {
             uid: 3,
+            folder: "INBOX".to_string(),
             subject: "Third".to_string(),
             from: "carol@example.com".to_string(),
             date: "2025-01-03".to_string(),
@@ -291,6 +294,7 @@ fn thread_grouping_with_reply() {
     let emails = vec![
         EmailSummary {
             uid: 1,
+            folder: "INBOX".to_string(),
             subject: "Original".to_string(),
             from: "alice@example.com".to_string(),
             date: "2025-01-01".to_string(),
@@ -302,6 +306,7 @@ fn thread_grouping_with_reply() {
         },
         EmailSummary {
             uid: 2,
+            folder: "INBOX".to_string(),
             subject: "Re: Original".to_string(),
             from: "bob@example.com".to_string(),
             date: "2025-01-02".to_string(),
@@ -324,6 +329,7 @@ fn thread_grouping_by_subject() {
     let emails = vec![
         EmailSummary {
             uid: 1,
+            folder: "INBOX".to_string(),
             subject: "Hello World".to_string(),
             from: "alice@example.com".to_string(),
             date: "2025-01-01".to_string(),
@@ -335,6 +341,7 @@ fn thread_grouping_by_subject() {
         },
         EmailSummary {
             uid: 2,
+            folder: "INBOX".to_string(),
             subject: "RE: Hello World".to_string(),
             from: "bob@example.com".to_string(),
             date: "2025-01-02".to_string(),
